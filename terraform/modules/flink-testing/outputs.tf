@@ -7,8 +7,25 @@ output "compute_pool_id" {
 }
 
 output "compute_pool_info" {
-  description = "Detailed information about the compute pool"
+  description = "Information about the compute pool"
   value       = module.flink_compute_pool.configuration_summary
+}
+
+output "connection_info" {
+  description = "Connection information for external tools"
+  value = {
+    environment_id   = var.environment_id
+    cluster_id       = var.cluster_id
+    compute_pool_id  = module.flink_compute_pool.compute_pool_id
+    service_account  = module.flink_compute_pool.service_account_id
+    
+    # pool_endpoint contains id, api_version, kind (no rest_endpoint available in this provider version)
+    pool_endpoint = module.flink_compute_pool.pool_endpoint
+    
+    # Topics for data producers/consumers
+    source_topics = local.topic_summary.source_topics
+    target_topics = local.topic_summary.target_topics
+  }
 }
 
 output "service_account_id" {
@@ -251,19 +268,4 @@ output "resource_info" {
   }
 }
 
-# Connection Information
-output "connection_info" {
-  description = "Connection information for external tools"
-  value = {
-    environment_id   = var.environment_id
-    cluster_id       = var.cluster_id
-    compute_pool_id  = module.flink_compute_pool.compute_pool_id
-    service_account  = module.flink_compute_pool.service_account_id
-    
-    rest_endpoint = module.flink_compute_pool.compute_pool_info.rest_endpoint
-    
-    # Topics for data producers/consumers
-    source_topics = local.topic_summary.source_topics
-    target_topics = local.topic_summary.target_topics
-  }
-}
+

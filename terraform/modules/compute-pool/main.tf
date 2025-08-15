@@ -20,24 +20,12 @@ resource "confluent_flink_compute_pool" "test_pool" {
   environment {
     id = var.environment_id
   }
-
-  tags = merge(var.tags, {
-    "CreatedBy"   = "TerraformTestFramework"
-    "Environment" = var.environment_id
-    "Purpose"     = "FlinkTesting"
-    "Sprint"      = "Sprint4"
-  })
 }
 
 # Service account for Flink operations
 resource "confluent_service_account" "flink_sa" {
   display_name = "${var.pool_name}-flink-sa"
   description  = "Service account for Flink compute pool ${var.pool_name}"
-
-  tags = {
-    "Purpose" = "FlinkComputePool"
-    "Pool"    = confluent_flink_compute_pool.test_pool.id
-  }
 }
 
 # Role binding for Flink service account - Environment Admin
@@ -109,7 +97,6 @@ locals {
     cloud        = confluent_flink_compute_pool.test_pool.cloud
     region       = confluent_flink_compute_pool.test_pool.region
     max_cfu      = confluent_flink_compute_pool.test_pool.max_cfu
-    current_cfu  = data.confluent_flink_compute_pool.test_pool_status.current_cfu
     resource_name = data.confluent_flink_compute_pool.test_pool_status.resource_name
   }
 }

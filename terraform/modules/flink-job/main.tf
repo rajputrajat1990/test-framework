@@ -5,7 +5,7 @@ terraform {
   required_providers {
     confluent = {
       source  = "confluentinc/confluent"
-      version = "~> 1.51.0"
+      version = "~> 2.37.0"
     }
     time = {
       source  = "hashicorp/time"
@@ -43,9 +43,6 @@ resource "confluent_flink_statement" "transformation_job" {
   # Optional statement name
   statement_name = var.statement_name
   
-  # Optional stop on error
-  stop_on_error = var.stop_on_error
-  
   depends_on = [data.confluent_flink_compute_pool.pool]
 }
 
@@ -54,21 +51,6 @@ resource "time_sleep" "wait_for_statement" {
   depends_on = [confluent_flink_statement.transformation_job]
   
   create_duration = var.statement_creation_wait_time
-}
-
-# Data source to check statement status
-data "confluent_flink_statement" "job_status" {
-  id = confluent_flink_statement.transformation_job.id
-  
-  compute_pool {
-    id = var.compute_pool_id
-  }
-  
-  principal {
-    id = var.service_account_id
-  }
-  
-  depends_on = [time_sleep.wait_for_statement]
 }
 
 # Optional validation statement for testing
@@ -91,7 +73,6 @@ resource "confluent_flink_statement" "validation_job" {
   })
   
   statement_name = "${var.statement_name}-validation"
-  stop_on_error  = true
   
   depends_on = [confluent_flink_statement.transformation_job]
 }
@@ -127,7 +108,6 @@ resource "confluent_flink_statement" "performance_monitor" {
   })
   
   statement_name = "${var.statement_name}-performance"
-  stop_on_error  = false
   
   depends_on = [confluent_flink_statement.transformation_job]
 }
@@ -138,32 +118,11 @@ locals {
     id            = confluent_flink_statement.transformation_job.id
     statement     = confluent_flink_statement.transformation_job.statement
     statement_name = confluent_flink_statement.transformation_job.statement_name
-    status        = try(data.confluent_flink_statement.job_status.status, "UNKNOWN")
+    status        = "UNKNOWN"  # Status not available via data source in this provider version
     compute_pool  = var.compute_pool_id
     principal     = var.service_account_id
   }
   
   validation_enabled = var.enable_validation && length(confluent_flink_statement.validation_job) > 0
   performance_monitoring_enabled = var.enable_performance_monitoring && length(confluent_flink_statement.performance_monitor) > 0
-}
-
-# Error handling - Check if job failed
-resource "terraform_data" "job_validation" {
-  depends_on = [data.confluent_flink_statement.job_status]
-  
-  provisioner "local-exec" {
-    command = <<-EOT
-      if [ "${try(data.confluent_flink_statement.job_status.status, "UNKNOWN")}" = "FAILED" ]; then
-        echo "Error: Flink job ${var.statement_name} failed to start"
-        exit 1
-      fi
-    EOT
-  }
-  
-  # Re-run validation if job configuration changes
-  triggers_replace = {
-    statement_content = confluent_flink_statement.transformation_job.statement
-    compute_pool     = var.compute_pool_id
-    service_account  = var.service_account_id
-  }
 }

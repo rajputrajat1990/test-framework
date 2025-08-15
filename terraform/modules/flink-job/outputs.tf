@@ -18,8 +18,8 @@ output "statement_content" {
 }
 
 output "job_status" {
-  description = "Status of the Flink job"
-  value       = try(data.confluent_flink_statement.job_status.status, "UNKNOWN")
+  description = "Status of the Flink job (not available in this provider version)"
+  value       = "UNKNOWN"
 }
 
 output "job_details" {
@@ -40,7 +40,6 @@ output "compute_pool_info" {
     display_name = data.confluent_flink_compute_pool.pool.display_name
     cloud        = data.confluent_flink_compute_pool.pool.cloud
     region       = data.confluent_flink_compute_pool.pool.region
-    current_cfu  = data.confluent_flink_compute_pool.pool.current_cfu
     max_cfu      = data.confluent_flink_compute_pool.pool.max_cfu
   }
 }
@@ -123,7 +122,7 @@ output "job_state" {
   description = "Current state information of the job"
   value = {
     id              = confluent_flink_statement.transformation_job.id
-    status          = try(data.confluent_flink_statement.job_status.status, "UNKNOWN")
+    status          = "UNKNOWN"  # Status not available in this provider version
     created_at      = confluent_flink_statement.transformation_job.id # Proxy for creation time
     compute_pool    = var.compute_pool_id
     environment     = var.environment_id
@@ -149,7 +148,7 @@ output "monitoring_info" {
 output "job_errors" {
   description = "Error information (if any) for debugging"
   value = {
-    status = try(data.confluent_flink_statement.job_status.status, "UNKNOWN")
+    status = "UNKNOWN"  # Status not available in this provider version
     # Additional error details would be available through Confluent Cloud Console
     troubleshooting_hint = "Check Confluent Cloud Console for detailed error logs if status is FAILED"
   }

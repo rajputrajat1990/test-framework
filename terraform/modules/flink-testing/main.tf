@@ -5,7 +5,7 @@ terraform {
   required_providers {
     confluent = {
       source  = "confluentinc/confluent"
-      version = "~> 1.51.0"
+      version = "~> 2.37.0"
     }
     time = {
       source  = "hashicorp/time"
@@ -33,7 +33,9 @@ module "flink_compute_pool" {
 
 # Source topics for testing
 resource "confluent_kafka_topic" "user_events_source" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-user-events-source"
   partitions_count = var.source_topic_partitions
   
@@ -46,7 +48,9 @@ resource "confluent_kafka_topic" "user_events_source" {
 }
 
 resource "confluent_kafka_topic" "users_lookup" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-users-lookup"
   partitions_count = var.lookup_topic_partitions
   
@@ -60,7 +64,9 @@ resource "confluent_kafka_topic" "users_lookup" {
 
 # Target topics for transformation results
 resource "confluent_kafka_topic" "user_events_enriched" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-user-events-enriched"
   partitions_count = var.target_topic_partitions
   
@@ -72,7 +78,9 @@ resource "confluent_kafka_topic" "user_events_enriched" {
 }
 
 resource "confluent_kafka_topic" "user_activity_hourly" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-user-activity-hourly"
   partitions_count = var.target_topic_partitions
   
@@ -84,7 +92,9 @@ resource "confluent_kafka_topic" "user_activity_hourly" {
 }
 
 resource "confluent_kafka_topic" "user_activity_sliding" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-user-activity-sliding"
   partitions_count = var.target_topic_partitions
   
@@ -96,7 +106,9 @@ resource "confluent_kafka_topic" "user_activity_sliding" {
 }
 
 resource "confluent_kafka_topic" "user_analytics_daily" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-user-analytics-daily"
   partitions_count = var.target_topic_partitions
   
@@ -109,7 +121,9 @@ resource "confluent_kafka_topic" "user_analytics_daily" {
 
 # Error and monitoring topics
 resource "confluent_kafka_topic" "transformation_errors" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-transformation-errors"
   partitions_count = 1
   
@@ -121,7 +135,9 @@ resource "confluent_kafka_topic" "transformation_errors" {
 }
 
 resource "confluent_kafka_topic" "performance_metrics" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.test_prefix}-performance-metrics"
   partitions_count = 1
   

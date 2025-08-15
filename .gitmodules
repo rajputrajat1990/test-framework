@@ -1,0 +1,3 @@
+[submodule "terraform-provider-confluent"]
+	path = terraform-provider-confluent
+	url = https://github.com/confluentinc/terraform-provider-confluent.git

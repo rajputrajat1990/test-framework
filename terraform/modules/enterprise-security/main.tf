@@ -119,7 +119,9 @@ resource "confluent_role_binding" "data_consumer_read" {
 
 # ACL Rules for fine-grained access control
 resource "confluent_kafka_acl" "admin_cluster_access" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   resource_type    = "CLUSTER"
   resource_name    = "kafka-cluster"
   pattern_type     = "LITERAL"
@@ -130,7 +132,9 @@ resource "confluent_kafka_acl" "admin_cluster_access" {
 }
 
 resource "confluent_kafka_acl" "connector_topic_create" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   resource_type    = "TOPIC"
   resource_name    = "${var.environment}-connector-"
   pattern_type     = "PREFIXED"
@@ -141,7 +145,9 @@ resource "confluent_kafka_acl" "connector_topic_create" {
 }
 
 resource "confluent_kafka_acl" "connector_topic_write" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   resource_type    = "TOPIC"
   resource_name    = "${var.environment}-connector-"
   pattern_type     = "PREFIXED"
@@ -153,7 +159,9 @@ resource "confluent_kafka_acl" "connector_topic_write" {
 
 # Consumer group ACLs
 resource "confluent_kafka_acl" "data_consumer_group" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   resource_type    = "GROUP"
   resource_name    = "${var.environment}-consumer-group-"
   pattern_type     = "PREFIXED"
@@ -188,7 +196,9 @@ resource "vault_generic_secret" "service_account_keys" {
 
 # Security scanning topics for audit logs
 resource "confluent_kafka_topic" "security_audit_logs" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.environment}-security-audit-logs"
   partitions_count = 3
   
@@ -201,7 +211,9 @@ resource "confluent_kafka_topic" "security_audit_logs" {
 }
 
 resource "confluent_kafka_topic" "access_control_events" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.environment}-access-control-events"
   partitions_count = 1
   
@@ -214,7 +226,9 @@ resource "confluent_kafka_topic" "access_control_events" {
 
 # Compliance validation resources
 resource "confluent_kafka_topic" "compliance_reports" {
-  kafka_cluster_id = var.cluster_id
+  kafka_cluster {
+    id = var.cluster_id
+  }
   topic_name       = "${var.environment}-compliance-reports"
   partitions_count = 1
   

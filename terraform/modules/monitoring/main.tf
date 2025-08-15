@@ -77,13 +77,13 @@ resource "confluent_connector" "sumo_logic_sink" {
     
     # Transforms for log enrichment
     "transforms"                          = "addFields,timestampRouter"
-    "transforms.addFields.type"          = "org.apache.kafka.connect.transforms.InsertField\$Value"
+    "transforms.addFields.type"          = "org.apache.kafka.connect.transforms.InsertField$$Value"
     "transforms.addFields.timestamp.field" = "log_timestamp"
     "transforms.addFields.static.field"  = "source"
     "transforms.addFields.static.value"  = "confluent-cloud"
     
     "transforms.timestampRouter.type"    = "org.apache.kafka.connect.transforms.TimestampRouter"
-    "transforms.timestampRouter.topic.format" = "\${topic}-\${timestamp}"
+    "transforms.timestampRouter.topic.format" = "$${topic}-$${timestamp}"
     "transforms.timestampRouter.timestamp.format" = "yyyy-MM-dd"
   }
   

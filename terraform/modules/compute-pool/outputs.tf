@@ -26,8 +26,8 @@ output "compute_pool_max_cfu" {
 }
 
 output "compute_pool_current_cfu" {
-  description = "Current CFU usage of the compute pool"
-  value       = try(data.confluent_flink_compute_pool.test_pool_status.current_cfu, 0)
+  description = "Current CFU usage of the compute pool (not available in this provider version)"
+  value       = 0
 }
 
 output "compute_pool_resource_name" {
@@ -98,7 +98,6 @@ output "pool_endpoint" {
   description = "Endpoint information for the compute pool (when available)"
   value = {
     id                = confluent_flink_compute_pool.test_pool.id
-    rest_endpoint     = confluent_flink_compute_pool.test_pool.rest_endpoint
     api_version       = confluent_flink_compute_pool.test_pool.api_version
     kind             = confluent_flink_compute_pool.test_pool.kind
   }
@@ -113,7 +112,7 @@ output "configuration_summary" {
     cloud_provider   = var.cloud_provider
     region          = var.region
     max_cfu         = var.max_cfu
-    current_cfu     = try(data.confluent_flink_compute_pool.test_pool_status.current_cfu, 0)
+    current_cfu     = 0  # Not available in this provider version
     created_at      = confluent_flink_compute_pool.test_pool.id # Creation timestamp proxy
     service_account = confluent_service_account.flink_sa.display_name
     api_key_created = confluent_api_key.flink_api_key.id != ""
