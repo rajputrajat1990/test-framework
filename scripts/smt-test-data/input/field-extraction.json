@@ -1,0 +1,3 @@
+{"nested": {"user_id": "123", "details": {"name": "john", "email": "john@example.com"}}}
+{"nested": {"user_id": "456", "details": {"name": "jane", "email": "jane@example.com"}}}
+{"nested": {"user_id": "789", "details": {"name": "bob", "email": "bob@example.com"}}}

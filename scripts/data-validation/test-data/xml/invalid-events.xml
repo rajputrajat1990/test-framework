@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<events>
+    <event>
+        <user_id></user_id>
+        <event_type>INVALID_TYPE</event_type>
+        <timestamp>-1</timestamp>
+    </event>
+    <event>
+        <user_id>user456</user_id>
+        <!-- Missing required fields -->
+        <properties>
+            <product>laptop</product>
+        </properties>
+    </event>
+</events>

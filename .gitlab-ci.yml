@@ -1,0 +1,624 @@
+# GitLab CI/CD Pipeline for Confluent Cloud Terraform Test Framework
+# Sprint 4: Advanced Features - Flink Testing & Continuous Integration
+
+stages:
+  - validate
+  - security-scan
+  - test-analysis
+  - unit-tests
+  - integration-tests
+  - flink-tests
+  - e2e-tests
+  - test-reporting
+  - quality-gates
+  - cleanup
+  - notification
+
+# Include GitLab templates for security scanning
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+# Global variables
+variables:
+  TERRAFORM_VERSION: "1.6.0"
+  # Sprint 4: Continuous Testing Configuration
+  CONTINUOUS_TESTING_CONFIG: "continuous-testing/config/continuous-testing.yaml"
+  TEST_RESULTS_DIR: "test-results"
+  TEST_REPORTS_DIR: "test-reports"
+  TEST_TIMEOUT: "45m"
+  MAX_PARALLEL_SUITES: "3"
+  ENABLE_SMART_SELECTION: "true"
+  CONFLUENT_PROVIDER_VERSION: "1.51.0"
+  TF_ROOT: ${CI_PROJECT_DIR}/terraform
+  TF_ADDRESS: ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${CI_COMMIT_REF_SLUG}
+  PARALLEL_EXECUTION_LIMIT: 5
+  TEST_TIMEOUT_MINUTES: 45
+  CLEANUP_ON_FAILURE: true
+
+# Global before_script for all jobs
+before_script:
+  - echo "Setting up environment for job $CI_JOB_NAME"
+  - terraform --version
+  - export TF_VAR_confluent_cloud_api_key=$CONFLUENT_API_KEY
+  - export TF_VAR_confluent_cloud_api_secret=$CONFLUENT_API_SECRET
+  - export TF_VAR_confluent_environment_id=$CONFLUENT_ENVIRONMENT_ID
+  - export TF_VAR_confluent_cluster_id=$CONFLUENT_CLUSTER_ID
+  - export TEST_PREFIX="ci-${CI_PIPELINE_ID}"
+  - export TEST_SUFFIX="${CI_COMMIT_SHORT_SHA}"
+
+# ==================== VALIDATION STAGE ====================
+
+validate-terraform:
+  stage: validate
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "🔍 Validating Terraform configuration..."
+    - terraform fmt -check -recursive
+    - cd $TF_ROOT && terraform init
+    - terraform validate
+    - echo "✅ Terraform validation completed"
+  only:
+    changes:
+      - "**/*.tf"
+      - "**/*.tfvars"
+      - "**/*.hcl"
+  cache:
+    key: terraform-providers-$TERRAFORM_VERSION
+    paths:
+      - terraform/.terraform/
+
+validate-yaml:
+  stage: validate
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache py3-yaml
+  script:
+    - echo "🔍 Validating YAML configuration files..."
+    - python3 -c "import yaml; yaml.safe_load(open('config/modules.yaml'))"
+    - for env_file in config/environments/*.yaml; do
+        echo "Validating $env_file";
+        python3 -c "import yaml; yaml.safe_load(open('$env_file'))";
+      done
+    - echo "✅ YAML validation completed"
+  only:
+    changes:
+      - "config/**/*.yaml"
+      - "config/**/*.yml"
+
+# ==================== SECURITY STAGE ====================
+
+security-scan:
+  stage: security-scan
+  extends: .sast
+  allow_failure: false
+  script:
+    - echo "🛡️ Running security analysis..."
+  artifacts:
+    reports:
+      sast: gl-sast-report.json
+    expire_in: 1 week
+
+secret-detection:
+  stage: security-scan
+  extends: .secret-detection
+  allow_failure: false
+  script:
+    - echo "🔐 Scanning for exposed secrets..."
+  artifacts:
+    reports:
+      secret_detection: gl-secret-detection-report.json
+    expire_in: 1 week
+
+# ==================== TEST ANALYSIS STAGE (SPRINT 4) ====================
+
+analyze-changes:
+  stage: test-analysis
+  image: hashicorp/terraform:1.6
+  before_script:
+    - apk add --no-cache bash jq curl git bc
+    - chmod +x continuous-testing/scripts/*.sh
+  script:
+    - echo "📊 Analyzing code changes for intelligent test selection..."
+    - ./continuous-testing/scripts/analyze-code-changes.sh 
+      --config $CONTINUOUS_TESTING_CONFIG 
+      --environment ${CI_ENVIRONMENT_NAME:-dev}
+      --verbose
+    - echo "✅ Change analysis completed"
+  artifacts:
+    paths:
+      - change-analysis.json
+      - impacted-modules.json
+    expire_in: 1 hour
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+select-tests:
+  stage: test-analysis
+  image: hashicorp/terraform:1.6
+  needs: ["analyze-changes"]
+  before_script:
+    - apk add --no-cache bash jq curl git bc
+    - chmod +x continuous-testing/scripts/*.sh
+  script:
+    - echo "🎯 Selecting tests based on change analysis..."
+    - ./continuous-testing/scripts/select-tests.sh
+      --config $CONTINUOUS_TESTING_CONFIG
+      --environment ${CI_ENVIRONMENT_NAME:-dev}
+      --verbose
+    - echo "✅ Test selection completed"
+    
+    # Show selected tests
+    - if [ -f test-execution-plan.json ]; then
+        echo "Selected test suites:";
+        jq -r '.execution_plan.selected_suites[]' test-execution-plan.json;
+      fi
+  artifacts:
+    paths:
+      - test-execution-plan.json
+    expire_in: 1 hour
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# ==================== UNIT TESTS STAGE ====================
+
+unit-tests:
+  stage: unit-tests
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "🧪 Running unit tests..."
+    - chmod +x scripts/run-unit-tests.sh
+    - ./scripts/run-unit-tests.sh
+  coverage: '/Coverage: \d+\.\d+%/'
+  artifacts:
+    reports:
+      junit: test-results/unit-tests.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: test-results/coverage.xml
+    paths:
+      - test-results/
+    expire_in: 1 week
+    when: always
+  cache:
+    key: terraform-providers-$TERRAFORM_VERSION
+    paths:
+      - terraform/.terraform/
+    policy: pull
+
+# ==================== INTEGRATION TESTS STAGE ====================
+
+integration-tests:
+  stage: integration-tests
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "🔧 Running integration tests..."
+    - chmod +x scripts/run-integration-tests.sh
+    - ./scripts/run-integration-tests.sh
+  parallel:
+    matrix:
+      - TEST_ENV: [dev, staging]
+        MODULE_TYPE: [kafka-topic, rbac, s3-source-connector]
+  artifacts:
+    reports:
+      junit: test-results/integration-${MODULE_TYPE}-${TEST_ENV}.xml
+    paths:
+      - test-results/
+      - logs/
+    expire_in: 1 week
+    when: always
+  retry:
+    max: 2
+    when: runner_system_failure
+  cache:
+    key: terraform-providers-$TERRAFORM_VERSION
+    paths:
+      - terraform/.terraform/
+    policy: pull
+
+# ==================== FLINK TESTS STAGE (SPRINT 4) ====================
+
+.flink_test_base: &flink_test_base
+  stage: flink-tests
+  image: hashicorp/terraform:1.6
+  before_script:
+    - apk add --no-cache bash jq curl git bc
+    - terraform --version
+    - jq --version
+    
+    # Setup Confluent Cloud CLI
+    - curl -sL --http1.1 https://cnfl.io/cli | sh -s -- latest
+    - export PATH="$HOME/.local/bin:$PATH"
+    - confluent version
+    
+    # Authenticate with Confluent Cloud
+    - confluent login --save
+    - confluent environment use $CONFLUENT_ENVIRONMENT_ID
+    
+    # Initialize Terraform
+    - terraform init -input=false
+    
+    # Make scripts executable
+    - chmod +x continuous-testing/scripts/*.sh
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - $TEST_RESULTS_DIR/
+    reports:
+      junit: $TEST_RESULTS_DIR/junit/*.xml
+  needs: ["select-tests"]
+  retry:
+    max: 1
+    when: runner_system_failure
+
+flink-transformation-tests:
+  <<: *flink_test_base
+  variables:
+    TEST_SUITE: "flink_transformation_tests"
+  script:
+    - echo "🌊 Executing Flink transformation tests..."
+    - ./continuous-testing/scripts/execute-test-suite.sh
+      --suite $TEST_SUITE
+      --results-dir $TEST_RESULTS_DIR
+      --timeout $TEST_TIMEOUT
+      --max-retries 2
+      --verbose
+    - echo "✅ Flink transformation tests completed"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  parallel:
+    matrix:
+      - FLINK_TEST_SCENARIO: ["user_enrichment", "event_aggregation", "windowed_analytics"]
+
+streaming-tests:
+  <<: *flink_test_base
+  variables:
+    TEST_SUITE: "streaming_tests"
+  script:
+    - echo "🌊 Executing streaming data flow tests..."
+    - ./continuous-testing/scripts/execute-test-suite.sh
+      --suite $TEST_SUITE
+      --results-dir $TEST_RESULTS_DIR
+      --timeout 60m
+      --max-retries 2
+      --verbose
+    - echo "✅ Streaming tests completed"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  timeout: 60 minutes
+
+performance-validation-tests:
+  <<: *flink_test_base
+  variables:
+    TEST_SUITE: "performance_validation_tests"
+  script:
+    - echo "⚡ Executing performance validation tests..."
+    - ./continuous-testing/scripts/execute-test-suite.sh
+      --suite $TEST_SUITE
+      --results-dir $TEST_RESULTS_DIR
+      --timeout 90m
+      --max-retries 1
+      --verbose
+    - echo "✅ Performance validation tests completed"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+  allow_failure: true
+  timeout: 90 minutes
+
+# ==================== E2E TESTS STAGE ====================
+
+e2e-basic-flow:
+  stage: e2e-tests
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "🌐 Running end-to-end basic data flow tests..."
+    - chmod +x scripts/run-e2e-tests.sh
+    - ./scripts/run-e2e-tests.sh --test-type=basic-flow --env=$TEST_ENV
+  parallel:
+    matrix:
+      - TEST_ENV: [dev, staging]
+  artifacts:
+    reports:
+      junit: test-results/e2e-basic-flow-${TEST_ENV}.xml
+    paths:
+      - test-results/
+      - logs/
+      - test-data/
+    expire_in: 30 days
+    when: always
+  retry:
+    max: 2
+    when: runner_system_failure
+  timeout: 45 minutes
+  cache:
+    key: terraform-providers-$TERRAFORM_VERSION
+    paths:
+      - terraform/.terraform/
+    policy: pull
+
+e2e-consumer-groups:
+  stage: e2e-tests
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "👥 Running consumer group tests..."
+    - chmod +x scripts/run-e2e-tests.sh
+    - ./scripts/run-e2e-tests.sh --test-type=consumer-groups --env=$TEST_ENV
+  parallel:
+    matrix:
+      - TEST_ENV: [dev, staging]
+  artifacts:
+    reports:
+      junit: test-results/e2e-consumer-groups-${TEST_ENV}.xml
+    paths:
+      - test-results/
+      - logs/
+    expire_in: 30 days
+    when: always
+  retry:
+    max: 2
+    when: runner_system_failure
+  timeout: 30 minutes
+
+e2e-performance:
+  stage: e2e-tests
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "⚡ Running performance tests..."
+    - chmod +x scripts/run-e2e-tests.sh
+    - ./scripts/run-e2e-tests.sh --test-type=performance --env=$TEST_ENV
+  parallel:
+    matrix:
+      - TEST_ENV: [dev, staging]
+  artifacts:
+    reports:
+      junit: test-results/e2e-performance-${TEST_ENV}.xml
+    paths:
+      - test-results/
+      - logs/
+      - performance-metrics/
+    expire_in: 30 days
+    when: always
+  allow_failure: true  # Performance tests shouldn't block deployment
+  timeout: 60 minutes
+
+e2e-flink-flow:
+  stage: e2e-tests
+  image: hashicorp/terraform:1.6
+  before_script:
+    - apk add --no-cache bash jq curl git bc
+    - terraform init -input=false
+    - chmod +x continuous-testing/scripts/*.sh
+  script:
+    - echo "🔄 Running end-to-end Flink transformation flow tests..."
+    - ./continuous-testing/scripts/execute-test-suite.sh
+      --suite e2e_flink_flow
+      --results-dir $TEST_RESULTS_DIR
+      --timeout 75m
+      --max-retries 1
+      --verbose
+    - echo "✅ End-to-end Flink flow tests completed"
+  needs: ["flink-transformation-tests", "streaming-tests"]
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - $TEST_RESULTS_DIR/
+    reports:
+      junit: $TEST_RESULTS_DIR/junit/*.xml
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  timeout: 75 minutes
+
+# ==================== TEST REPORTING STAGE (SPRINT 4) ====================
+
+generate-reports:
+  stage: test-reporting
+  image: hashicorp/terraform:1.6
+  before_script:
+    - apk add --no-cache bash jq curl git bc
+    - chmod +x continuous-testing/scripts/*.sh
+  needs:
+    - job: unit-tests
+      artifacts: true
+      optional: true
+    - job: integration-tests
+      artifacts: true
+      optional: true
+    - job: flink-transformation-tests
+      artifacts: true
+      optional: true
+    - job: streaming-tests
+      artifacts: true
+      optional: true
+    - job: performance-validation-tests
+      artifacts: true
+      optional: true
+    - job: e2e-flink-flow
+      artifacts: true
+      optional: true
+  script:
+    - echo "📋 Generating comprehensive test reports..."
+    
+    # Generate HTML report
+    - ./continuous-testing/scripts/generate-test-report.sh
+      --results-dir $TEST_RESULTS_DIR
+      --output-dir $TEST_REPORTS_DIR
+      --format html
+      --verbose
+    
+    # Generate JSON report for API consumption
+    - ./continuous-testing/scripts/generate-test-report.sh
+      --results-dir $TEST_RESULTS_DIR
+      --output-dir $TEST_REPORTS_DIR
+      --format json
+    
+    # Generate JUnit XML for GitLab integration
+    - ./continuous-testing/scripts/generate-test-report.sh
+      --results-dir $TEST_RESULTS_DIR
+      --output-dir $TEST_REPORTS_DIR
+      --format junit
+    
+    - echo "✅ Test reports generated successfully"
+    
+    # Display summary
+    - if [ -f $TEST_REPORTS_DIR/test-report.json ]; then
+        echo "Test execution summary:";
+        jq -r '.summary | "Total: \(.total_suites), Passed: \(.passed_suites), Failed: \(.failed_suites), Success Rate: \(.success_rate)%"' $TEST_REPORTS_DIR/test-report.json;
+      fi
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  artifacts:
+    when: always
+    expire_in: 2 weeks
+    paths:
+      - $TEST_REPORTS_DIR/
+    reports:
+      junit: $TEST_REPORTS_DIR/junit-report.xml
+
+# ==================== QUALITY GATES STAGE (SPRINT 4) ====================
+
+quality-gates:
+  stage: quality-gates
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache bash jq bc
+  needs: ["generate-reports"]
+  script:
+    - echo "🚦 Evaluating quality gates..."
+    
+    # Check if test report exists
+    - |
+      if [ ! -f $TEST_REPORTS_DIR/test-report.json ]; then
+        echo "❌ Test report not found, failing quality gate"
+        exit 1
+      fi
+    
+    # Extract metrics from report
+    - SUCCESS_RATE=$(jq -r '.summary.success_rate' $TEST_REPORTS_DIR/test-report.json)
+    - TOTAL_SUITES=$(jq -r '.summary.total_suites' $TEST_REPORTS_DIR/test-report.json)
+    - FAILED_SUITES=$(jq -r '.summary.failed_suites' $TEST_REPORTS_DIR/test-report.json)
+    
+    # Define quality gate thresholds
+    - MIN_SUCCESS_RATE=85
+    - MAX_FAILED_SUITES=2
+    
+    - echo "📊 Quality metrics:"
+    - echo "  Success rate: ${SUCCESS_RATE}%"
+    - echo "  Total suites: ${TOTAL_SUITES}"
+    - echo "  Failed suites: ${FAILED_SUITES}"
+    
+    # Evaluate success rate
+    - |
+      if [ $(echo "$SUCCESS_RATE >= $MIN_SUCCESS_RATE" | bc -l) -eq 0 ]; then
+        echo "❌ Quality gate failed: Success rate $SUCCESS_RATE% is below minimum $MIN_SUCCESS_RATE%"
+        exit 1
+      fi
+    
+    # Evaluate failed suites
+    - |
+      if [ "$FAILED_SUITES" -gt "$MAX_FAILED_SUITES" ]; then
+        echo "❌ Quality gate failed: $FAILED_SUITES failed suites exceeds maximum $MAX_FAILED_SUITES"
+        exit 1
+      fi
+    
+    # Check critical test suites
+    - |
+      CRITICAL_FAILURES=$(jq -r '.suites[] | select(.test_suite == "terraform_validation" or .test_suite == "flink_transformation_tests") | select(.status != "PASSED") | .test_suite' $TEST_REPORTS_DIR/test-report.json)
+      if [ -n "$CRITICAL_FAILURES" ]; then
+        echo "❌ Quality gate failed: Critical test suites failed: $CRITICAL_FAILURES"
+        exit 1
+      fi
+    
+    - echo "✅ All quality gates passed!"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# ==================== CLEANUP STAGE ====================
+
+cleanup-resources:
+  stage: cleanup
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "🧹 Cleaning up test resources..."
+    - chmod +x scripts/cleanup-test-resources.sh
+    - ./scripts/cleanup-test-resources.sh --pipeline-id=$CI_PIPELINE_ID
+  when: always
+  allow_failure: true
+  artifacts:
+    paths:
+      - cleanup-logs/
+    expire_in: 7 days
+    when: always
+
+# ==================== NOTIFICATION STAGE ====================
+
+notify-success:
+  stage: notification
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - echo "✅ Sending success notification..."
+    - chmod +x scripts/send-notifications.sh
+    - ./scripts/send-notifications.sh --status=success --pipeline-id=$CI_PIPELINE_ID
+  when: on_success
+  dependencies:
+    - e2e-basic-flow
+    - e2e-consumer-groups
+    - e2e-performance
+
+notify-failure:
+  stage: notification
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache curl
+  script:
+    - echo "❌ Sending failure notification..."
+    - chmod +x scripts/send-notifications.sh
+    - ./scripts/send-notifications.sh --status=failure --pipeline-id=$CI_PIPELINE_ID
+  when: on_failure
+  allow_failure: true
+
+# ==================== MANUAL DEPLOYMENT JOBS ====================
+
+deploy-to-staging:
+  stage: e2e-tests
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "🚀 Deploying to staging environment..."
+    - ./scripts/run-e2e-tests.sh --env=staging --deploy-mode=true
+  when: manual
+  only:
+    - main
+    - develop
+  environment:
+    name: staging
+    url: https://staging.confluent.example.com
+
+deploy-to-production:
+  stage: e2e-tests
+  image: hashicorp/terraform:$TERRAFORM_VERSION
+  script:
+    - echo "🚀 Deploying to production environment..."
+    - ./scripts/run-e2e-tests.sh --env=production --deploy-mode=true
+  when: manual
+  only:
+    - main
+  environment:
+    name: production
+    url: https://production.confluent.example.com
+  artifacts:
+    paths:
+      - deployment-logs/
+    expire_in: 90 days

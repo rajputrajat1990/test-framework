@@ -1,0 +1,48 @@
+{
+  "type": "record",
+  "name": "UserEvent",
+  "namespace": "com.confluent.test",
+  "fields": [
+    {
+      "name": "user_id",
+      "type": "string",
+      "doc": "Unique identifier for the user"
+    },
+    {
+      "name": "event_type",
+      "type": {
+        "type": "enum",
+        "name": "EventType",
+        "symbols": ["LOGIN", "LOGOUT", "PURCHASE", "VIEW", "CLICK"]
+      },
+      "doc": "Type of user event"
+    },
+    {
+      "name": "timestamp",
+      "type": "long",
+      "logicalType": "timestamp-millis",
+      "doc": "Event timestamp in milliseconds"
+    },
+    {
+      "name": "properties",
+      "type": {
+        "type": "map",
+        "values": "string"
+      },
+      "default": {},
+      "doc": "Additional event properties"
+    },
+    {
+      "name": "session_id",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Optional session identifier"
+    },
+    {
+      "name": "user_agent",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "User agent string"
+    }
+  ]
+}

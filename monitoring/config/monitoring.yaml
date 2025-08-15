@@ -1,0 +1,476 @@
+# Sprint 5: Monitoring Integration Configuration
+# Comprehensive monitoring, alerting, and observability settings
+
+monitoring_integration:
+  # Sumo Logic Configuration
+  sumo_logic:
+    enabled: true
+    collector_config:
+      name: "confluent-kafka-collector"
+      description: "Collector for Kafka and connector logs"
+      category_prefix: "kafka"
+      timezone: "UTC"
+    
+    http_sources:
+      - name: "kafka-logs"
+        category: "kafka/logs"
+        description: "Kafka cluster and application logs"
+        content_type: "application/json"
+        
+      - name: "connector-logs"
+        category: "kafka/connectors"
+        description: "Connector execution and error logs"
+        content_type: "application/json"
+        
+      - name: "flink-logs"
+        category: "kafka/flink"
+        description: "Flink job execution and performance logs"
+        content_type: "application/json"
+    
+    connector_config:
+      class: "com.sumologic.kafka.connector.SumoLogicSinkConnector"
+      tasks_max: 2
+      batch_size: 100
+      batch_timeout: 5000
+      compression_enabled: true
+      
+      # Topics to monitor
+      monitored_topics:
+        - "${environment}-monitoring-logs"
+        - "${environment}-connector-metrics"
+        - "${environment}-transformation-errors"
+        - "${environment}-performance-metrics"
+      
+      # Error handling
+      error_handling:
+        tolerance: "all"
+        dlq_topic: "${environment}-sumo-dlq"
+        dlq_replication_factor: 3
+      
+      # Data enrichment transforms
+      transforms:
+        - name: "addFields"
+          type: "org.apache.kafka.connect.transforms.InsertField$Value"
+          config:
+            timestamp_field: "log_timestamp"
+            static_field: "source"
+            static_value: "confluent-cloud"
+        
+        - name: "timestampRouter"
+          type: "org.apache.kafka.connect.transforms.TimestampRouter"
+          config:
+            topic_format: "${topic}-${timestamp}"
+            timestamp_format: "yyyy-MM-dd"
+
+  # Datadog Integration (Optional)
+  datadog:
+    enabled: false
+    api_key_env: "DD_API_KEY"
+    app_key_env: "DD_APP_KEY"
+    
+    metrics:
+      - "confluent.kafka.cluster.throughput"
+      - "confluent.kafka.cluster.consumer_lag"
+      - "confluent.connector.status"
+      - "confluent.flink.job.status"
+    
+    dashboards:
+      - "kafka-cluster-overview"
+      - "connector-health-monitoring"
+      - "flink-job-performance"
+
+  # Prometheus Integration (Optional)
+  prometheus:
+    enabled: false
+    scrape_interval: "30s"
+    metrics_port: 9092
+    
+    exporters:
+      - type: "kafka_exporter"
+        port: 9308
+      - type: "confluent_exporter"
+        port: 9309
+
+# Alert Configuration
+alerting:
+  enabled: true
+  
+  # Notification Channels
+  channels:
+    slack:
+      enabled: true
+      webhook_url_env: "SLACK_WEBHOOK_URL"
+      channel: "#kafka-alerts"
+      username: "Confluent Monitoring"
+      icon_emoji: ":warning:"
+    
+    teams:
+      enabled: true
+      webhook_url_env: "TEAMS_WEBHOOK_URL"
+      card_title: "Confluent Monitoring Alert"
+    
+    email:
+      enabled: true
+      smtp_server: "smtp.company.com"
+      smtp_port: 587
+      from_address: "kafka-alerts@company.com"
+      recipients:
+        - "devops-team@company.com"
+        - "platform-engineering@company.com"
+    
+    pagerduty:
+      enabled: false
+      integration_key_env: "PAGERDUTY_INTEGRATION_KEY"
+      service_name: "Confluent Cloud"
+
+  # Alert Rules
+  rules:
+    - name: "high_consumer_lag"
+      description: "Consumer lag exceeds threshold"
+      severity: "critical"
+      query: |
+        _sourceCategory="kafka/*/metrics" 
+        | json field=_raw "consumer.lag" as lag 
+        | where lag > 10000 
+        | count by consumer_group, topic
+      evaluation_window: "5m"
+      threshold: 1
+      threshold_type: "GreaterThan"
+      channels: ["slack", "pagerduty"]
+      
+    - name: "connector_failure"
+      description: "Connector status is not RUNNING"
+      severity: "critical"
+      query: |
+        _sourceCategory="kafka/*/logs" 
+        | json field=_raw "status" as status 
+        | where status != "RUNNING" 
+        | count by connector_name
+      evaluation_window: "2m"
+      threshold: 1
+      threshold_type: "GreaterThanOrEqual"
+      channels: ["teams", "pagerduty", "email"]
+      
+    - name: "high_error_rate"
+      description: "Error rate exceeds 5%"
+      severity: "warning"
+      query: |
+        _sourceCategory="kafka/*/logs" 
+        | json field=_raw "level" as level 
+        | timeslice 5m 
+        | if(level="ERROR", 1, 0) as error_count 
+        | if(level!="", 1, 0) as total_count 
+        | sum(error_count) as errors, sum(total_count) as total by _timeslice 
+        | (errors/total)*100 as error_rate 
+        | where error_rate > 5
+      evaluation_window: "10m"
+      threshold: 1
+      threshold_type: "GreaterThanOrEqual"
+      channels: ["slack", "email"]
+      
+    - name: "throughput_drop"
+      description: "Significant drop in throughput"
+      severity: "warning"
+      query: |
+        _sourceCategory="kafka/*/metrics" 
+        | json field=_raw "throughput" as current_throughput 
+        | timeslice 5m 
+        | avg(current_throughput) as avg_throughput by _timeslice 
+        | compare with timeshift -1h 
+        | (avg_throughput - avg_throughput_1h)/avg_throughput_1h * 100 as throughput_change 
+        | where throughput_change < -50
+      evaluation_window: "15m"
+      threshold: 1
+      threshold_type: "GreaterThanOrEqual"
+      channels: ["slack", "teams"]
+      
+    - name: "flink_job_failure"
+      description: "Flink job is not in RUNNING state"
+      severity: "critical"
+      query: |
+        _sourceCategory="kafka/flink" 
+        | json field=_raw "job_status" as status 
+        | where status != "RUNNING" 
+        | count by job_name, job_id
+      evaluation_window: "3m"
+      threshold: 1
+      threshold_type: "GreaterThanOrEqual"
+      channels: ["teams", "pagerduty"]
+      
+    - name: "flink_checkpoint_failure"
+      description: "Flink checkpoint failures exceed threshold"
+      severity: "warning"
+      query: |
+        _sourceCategory="kafka/flink" 
+        | json field=_raw "checkpoint_status" as status 
+        | where status = "FAILED" 
+        | timeslice 10m 
+        | count by job_name, _timeslice 
+        | where _count > 3
+      evaluation_window: "10m"
+      threshold: 1
+      threshold_type: "GreaterThanOrEqual"
+      channels: ["slack", "email"]
+
+  # Notification Settings
+  notification_settings:
+    cooldown_minutes: 15
+    escalation_delay_minutes: 30
+    max_alerts_per_hour: 20
+    
+    # Alert suppression
+    suppression_rules:
+      - condition: "environment = 'dev'"
+        suppress_severity: ["info", "warning"]
+      - condition: "time_range = '02:00-06:00'"
+        suppress_severity: ["warning"]
+
+# Dashboard Configuration
+dashboards:
+  sumo_logic:
+    enabled: true
+    folder: "Kafka Monitoring"
+    
+    dashboards:
+      - name: "Kafka Cluster Overview"
+        description: "High-level cluster health and performance metrics"
+        panels:
+          - title: "Cluster Throughput"
+            type: "line_chart"
+            query: |
+              _sourceCategory="kafka/*/metrics" 
+              | json field=_raw "throughput" as throughput 
+              | timeslice 1m 
+              | avg(throughput) by _timeslice
+            
+          - title: "Topic Partition Distribution"
+            type: "pie_chart"
+            query: |
+              _sourceCategory="kafka/*/metrics" 
+              | json field=_raw "topic", "partitions" 
+              | count by topic
+            
+          - title: "Consumer Lag Heatmap"
+            type: "heatmap"
+            query: |
+              _sourceCategory="kafka/*/metrics" 
+              | json field=_raw "consumer.lag" as lag, "consumer_group", "topic" 
+              | avg(lag) by consumer_group, topic
+      
+      - name: "Connector Health"
+        description: "Connector status and performance monitoring"
+        panels:
+          - title: "Connector Status Distribution"
+            type: "bar_chart"
+            query: |
+              _sourceCategory="kafka/connectors" 
+              | json field=_raw "status" 
+              | count by status
+            
+          - title: "Connector Error Rate"
+            type: "line_chart"
+            query: |
+              _sourceCategory="kafka/connectors" 
+              | json field=_raw "level" as level 
+              | timeslice 5m 
+              | if(level="ERROR", 1, 0) as error_count 
+              | sum(error_count) by _timeslice
+            
+          - title: "Top Failing Connectors"
+            type: "table"
+            query: |
+              _sourceCategory="kafka/connectors" 
+              | json field=_raw "connector_name", "level" 
+              | where level = "ERROR" 
+              | count by connector_name 
+              | sort by _count desc 
+              | limit 10
+      
+      - name: "Flink Job Performance"
+        description: "Flink job execution and performance metrics"
+        panels:
+          - title: "Job Status Overview"
+            type: "pie_chart"
+            query: |
+              _sourceCategory="kafka/flink" 
+              | json field=_raw "job_status" as status 
+              | count by status
+            
+          - title: "Processing Latency"
+            type: "line_chart"
+            query: |
+              _sourceCategory="kafka/flink" 
+              | json field=_raw "processing_latency" as latency 
+              | timeslice 1m 
+              | avg(latency) by _timeslice
+            
+          - title: "Checkpoint Duration"
+            type: "line_chart"
+            query: |
+              _sourceCategory="kafka/flink" 
+              | json field=_raw "checkpoint_duration" as duration 
+              | timeslice 5m 
+              | avg(duration) by _timeslice
+
+  grafana:
+    enabled: false
+    url: "http://grafana.company.com"
+    api_key_env: "GRAFANA_API_KEY"
+    
+    datasources:
+      - name: "prometheus"
+        type: "prometheus"
+        url: "http://prometheus.company.com:9090"
+      
+      - name: "sumo-logic"
+        type: "sumologic"
+        url: "https://api.sumologic.com/api/v1/search"
+
+# Metrics Configuration
+metrics:
+  collection_interval: "30s"
+  retention_days: 90
+  
+  # Confluent Cloud Metrics
+  confluent_metrics:
+    enabled: true
+    api_endpoint: "https://api.confluent.cloud/v1/metrics/cloud"
+    
+    metrics:
+      cluster_metrics:
+        - "io.confluent.kafka.server/received_bytes"
+        - "io.confluent.kafka.server/sent_bytes"
+        - "io.confluent.kafka.server/request_count"
+        - "io.confluent.kafka.server/partition_count"
+        - "io.confluent.kafka.server/successful_authentication_count"
+      
+      topic_metrics:
+        - "io.confluent.kafka.server/received_records"
+        - "io.confluent.kafka.server/sent_records" 
+        - "io.confluent.kafka.server/retained_bytes"
+        - "io.confluent.kafka.server/active_connection_count"
+      
+      consumer_metrics:
+        - "io.confluent.kafka.consumer/lag_sum"
+        - "io.confluent.kafka.consumer/records_consumed"
+        - "io.confluent.kafka.consumer/consumer_total_lag"
+      
+      connector_metrics:
+        - "io.confluent.kafka.connect/connector_status"
+        - "io.confluent.kafka.connect/task_status"
+        - "io.confluent.kafka.connect/records_processed"
+
+  # Custom Application Metrics
+  custom_metrics:
+    enabled: true
+    
+    test_execution_metrics:
+      - name: "test_suite_execution_time"
+        type: "histogram"
+        description: "Time taken to execute test suites"
+        buckets: [1, 5, 10, 30, 60, 300, 600]
+        
+      - name: "test_success_rate"
+        type: "gauge"
+        description: "Test success rate percentage"
+        
+      - name: "test_failure_count"
+        type: "counter" 
+        description: "Number of test failures"
+    
+    transformation_metrics:
+      - name: "transformation_accuracy"
+        type: "gauge"
+        description: "Data transformation accuracy percentage"
+        
+      - name: "flink_job_execution_time"
+        type: "histogram"
+        description: "Flink job execution duration"
+        buckets: [1, 5, 10, 30, 60, 300]
+        
+      - name: "data_processing_latency"
+        type: "histogram"
+        description: "End-to-end data processing latency"
+        buckets: [0.1, 0.5, 1, 2, 5, 10, 30]
+
+# Health Checks Configuration
+health_checks:
+  enabled: true
+  interval: "5m"
+  timeout: "30s"
+  
+  endpoints:
+    - name: "confluent_cloud_api"
+      url: "https://api.confluent.cloud/health"
+      expected_status: 200
+      critical: true
+      
+    - name: "schema_registry"
+      url: "${SCHEMA_REGISTRY_URL}/health"
+      expected_status: 200
+      critical: true
+      
+    - name: "sumo_logic_api"
+      url: "https://api.sumologic.com/api/v1/collectors"
+      expected_status: 200
+      critical: false
+      headers:
+        Authorization: "Basic ${SUMO_LOGIC_AUTH}"
+
+# Performance Thresholds
+performance_thresholds:
+  cluster_performance:
+    max_consumer_lag: 10000
+    min_throughput_msgs_sec: 1000
+    max_error_rate_percent: 1.0
+    max_response_time_ms: 5000
+  
+  connector_performance:
+    max_processing_delay_seconds: 30
+    min_success_rate_percent: 99.0
+    max_restart_count: 3
+  
+  flink_performance:
+    max_processing_latency_seconds: 5
+    max_checkpoint_duration_seconds: 60
+    min_uptime_percent: 99.0
+    max_backpressure_percent: 10
+
+# Data Quality Monitoring
+data_quality:
+  enabled: true
+  
+  validation_rules:
+    - name: "message_completeness"
+      description: "Ensure all required fields are present"
+      threshold: 99.9
+      
+    - name: "schema_compliance"
+      description: "Messages conform to schema"
+      threshold: 100.0
+      
+    - name: "data_freshness"
+      description: "Data processing within SLA"
+      threshold_seconds: 300
+      
+    - name: "duplicate_detection"
+      description: "Duplicate message rate"
+      max_duplicate_rate_percent: 0.1
+
+# Export Configuration
+exports:
+  prometheus:
+    enabled: false
+    endpoint: "/metrics"
+    port: 9090
+    
+  influxdb:
+    enabled: false
+    url: "http://influxdb:8086"
+    database: "kafka_monitoring"
+    
+  s3:
+    enabled: true
+    bucket: "kafka-monitoring-exports-${environment}"
+    prefix: "metrics/"
+    retention_days: 365

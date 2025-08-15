@@ -1,0 +1,61 @@
+security_policies:
+  rbac_enforcement:
+    required: true
+    description: "RBAC must be enabled for all resources"
+    
+  least_privilege:
+    required: true
+    description: "Users should have minimum required permissions"
+    
+  role_separation:
+    required: true
+    description: "Admin and user roles must be clearly separated"
+    
+  resource_isolation:
+    required: true
+    description: "Resources must be properly isolated between environments"
+    
+  audit_logging:
+    required: true
+    description: "All access attempts must be logged"
+
+access_matrix:
+  CloudClusterAdmin:
+    topics: ["CREATE", "READ", "WRITE", "DELETE", "ALTER", "DESCRIBE"]
+    consumer_groups: ["READ", "DELETE", "DESCRIBE"]
+    connectors: ["CREATE", "READ", "DELETE", "ALTER", "DESCRIBE"]
+    schemas: ["CREATE", "READ", "DELETE", "ALTER", "DESCRIBE"]
+    
+  EnvironmentAdmin:
+    environment: ["CREATE", "READ", "DELETE", "ALTER", "DESCRIBE"]
+    clusters: ["CREATE", "READ", "DELETE", "ALTER", "DESCRIBE"]
+    
+  DeveloperRead:
+    topics: ["READ", "DESCRIBE"]
+    consumer_groups: ["READ", "DESCRIBE"]
+    schemas: ["READ", "DESCRIBE"]
+    
+  DeveloperWrite:
+    topics: ["READ", "WRITE", "DESCRIBE"]
+    consumer_groups: ["READ", "DESCRIBE"]
+    schemas: ["READ", "DESCRIBE"]
+    
+  DeveloperManage:
+    topics: ["CREATE", "READ", "WRITE", "DELETE", "ALTER", "DESCRIBE"]
+    consumer_groups: ["READ", "DELETE", "DESCRIBE"]
+    schemas: ["CREATE", "READ", "DELETE", "ALTER", "DESCRIBE"]
+
+forbidden_operations:
+  cross_environment_access:
+    description: "Users should not access resources from other environments"
+    test_scenarios:
+      - user: "dev-user"
+        environment: "production"
+        should_fail: true
+        
+  privilege_escalation:
+    description: "Users should not be able to escalate their privileges"
+    test_scenarios:
+      - user: "DeveloperRead"
+        attempted_role: "CloudClusterAdmin"
+        should_fail: true

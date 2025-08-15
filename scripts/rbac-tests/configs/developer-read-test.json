@@ -1,0 +1,15 @@
+{
+  "test_name": "Developer Read Role Test",
+  "description": "Validate read-only access permissions",
+  "principal": "User:test-developer-read",
+  "role": "DeveloperRead",
+  "resource_type": "topic",
+  "resource_name": "test-topic-read",
+  "expected_permissions": [
+    "READ", "DESCRIBE"
+  ],
+  "forbidden_permissions": [
+    "WRITE", "CREATE", "DELETE", "ALTER"
+  ],
+  "should_succeed": true
+}

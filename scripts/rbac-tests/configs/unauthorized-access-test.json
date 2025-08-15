@@ -1,0 +1,13 @@
+{
+  "test_name": "Unauthorized Access Test",
+  "description": "Validate denial of unauthorized operations",
+  "principal": "User:unauthorized-user",
+  "role": null,
+  "resource_type": "topic",
+  "resource_name": "protected-topic",
+  "expected_permissions": [],
+  "forbidden_permissions": [
+    "READ", "WRITE", "CREATE", "DELETE", "ALTER", "DESCRIBE"
+  ],
+  "should_succeed": false
+}

@@ -1,0 +1,723 @@
+# Module Configuration for Terraform Test Framework
+# This file defines the available modules and their test configurations
+
+modules:
+  kafka_topic:
+    path: "./modules/kafka-topic"
+    description: "Creates Kafka topics with configurable partitions and settings"
+    parameters:
+      topic_name: "${TEST_PREFIX}-topic-${TEST_SUFFIX}"
+      partitions: 3
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      topic_config:
+        cleanup.policy: "delete"
+        retention.ms: "604800000"  # 7 days
+        min.insync.replicas: "2"
+    validation:
+      resource_count: 1
+      resource_type: "confluent_kafka_topic"
+      required_outputs:
+        - topic_name
+        - topic_id
+        - partitions_count
+      property_checks:
+        - property: "partitions_count"
+          expected: 3
+        - property: "config.cleanup.policy"
+          expected: "delete"
+    dependencies: []
+    tags:
+      - core
+      - kafka
+      - topics
+
+  # Sprint 4: Flink Compute Pool Module
+  flink_compute_pool:
+    path: "./modules/compute-pool"
+    description: "Creates and manages Flink compute pools for stream processing"
+    parameters:
+      pool_name: "${TEST_PREFIX}-compute-pool-${TEST_SUFFIX}"
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cloud_provider: "AWS"
+      region: "us-west-2"
+      max_cfu: 10
+    validation:
+      resource_count: 1
+      resource_type: "confluent_flink_compute_pool"
+      required_outputs:
+        - compute_pool_id
+        - compute_pool_name
+
+  # Sprint 5: Monitoring Integration Module
+  monitoring_integration:
+    path: "./modules/monitoring"
+    description: "Comprehensive monitoring with Sumo Logic, metrics, and alerting"
+    parameters:
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      organization_id: "${CONFLUENT_ORGANIZATION_ID}"
+      environment: "${ENVIRONMENT}"
+      cluster_name: "${TEST_PREFIX}-cluster"
+      sumo_collector_id: "${SUMO_COLLECTOR_ID}"
+      log_topics:
+        - "${TEST_PREFIX}-monitoring-logs"
+        - "${TEST_PREFIX}-connector-metrics"
+        - "${TEST_PREFIX}-transformation-errors"
+      monitoring_config:
+        connector_tasks: 2
+        batch_size: 100
+        batch_timeout: 5000
+        log_partitions: 3
+        log_retention_ms: 604800000
+        metrics_retention_ms: 2592000000
+        enable_alerting: true
+    validation:
+      resource_count: 4
+      resource_type: "confluent_connector"
+      required_outputs:
+        - sumo_logic_integration
+        - monitoring_topics
+        - monitoring_credentials
+        - alerting_status
+      property_checks:
+        - property: "sumo_logic_integration.connector_status"
+          expected: "RUNNING"
+    dependencies: ["kafka_topic"]
+    tags:
+      - monitoring
+      - observability
+      - sprint5
+
+  # Sprint 5: Enterprise Security Module
+  enterprise_security:
+    path: "./modules/enterprise-security"
+    description: "Enterprise RBAC, compliance validation, and security scanning"
+    parameters:
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      organization_id: "${CONFLUENT_ORGANIZATION_ID}"
+      environment: "${ENVIRONMENT}"
+      connector_accessible_topics:
+        - "${TEST_PREFIX}-connector-*"
+        - "${TEST_PREFIX}-monitoring-*"
+      consumer_accessible_topics:
+        - "${TEST_PREFIX}-monitoring-logs"
+        - "${TEST_PREFIX}-performance-metrics"
+      vault_config:
+        enabled: false
+        secret_path: "confluent/secrets"
+        auth_method: "token"
+      security_config:
+        credential_rotation_days: 30
+        enable_automatic_rotation: true
+        audit_retention_ms: 2592000000
+        enable_vulnerability_scanning: true
+        scan_frequency_hours: 24
+        require_tls: true
+        min_tls_version: "1.2"
+      compliance_config:
+        standards: ["SOC2", "GDPR"]
+        enable_validation: true
+        validation_frequency: "daily"
+        report_retention_ms: 31536000000
+    validation:
+      resource_count: 8
+      resource_type: "confluent_service_account"
+      required_outputs:
+        - service_accounts
+        - rbac_bindings
+        - security_topics
+        - compliance_status
+      property_checks:
+        - property: "service_accounts.kafka_admin.id"
+          expected: "not_empty"
+        - property: "security_topics.security_audit_logs.topic_name"
+          expected: "contains:security-audit"
+    dependencies: ["kafka_topic"]
+    tags:
+      - security
+      - compliance
+      - rbac
+      - sprint5
+
+  # Sprint 5: Production Deployment Module
+  production_deployment:
+    path: "./modules/production-deployment"
+    description: "Multi-environment deployment automation with health checks"
+    parameters:
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      organization_id: "${CONFLUENT_ORGANIZATION_ID}"
+      environment: "${ENVIRONMENT}"
+      deployment_config:
+        version: "1.0.0"
+        core_topics:
+          - "${TEST_PREFIX}-monitoring-logs"
+          - "${TEST_PREFIX}-connector-metrics"
+          - "${TEST_PREFIX}-security-audit-logs"
+          - "${TEST_PREFIX}-performance-metrics"
+        connectors:
+          - "sumo-logic-sink"
+          - "monitoring-metrics"
+        cloud_provider: "AWS"
+        region: "us-west-2"
+        validation_frequency_hours: 24
+        alert_on_config_drift: true
+        enable_auto_recovery: true
+      monitoring_config:
+        sumo_collector_id: "${SUMO_COLLECTOR_ID}"
+        log_topics:
+          - "${TEST_PREFIX}-monitoring-logs"
+          - "${TEST_PREFIX}-connector-metrics"
+      security_config:
+        connector_topics:
+          - "${TEST_PREFIX}-connector-*"
+        consumer_topics:
+          - "${TEST_PREFIX}-monitoring-*"
+        enable_security_validation: true
+      gitlab_config:
+        enabled: false
+        project_id: ""
+    validation:
+      resource_count: 6
+      resource_type: "null_resource"
+      required_outputs:
+        - deployment_status
+        - health_check_results
+        - monitoring_integration
+        - security_validation
+      property_checks:
+        - property: "deployment_status.overall_status"
+          expected: "HEALTHY"
+    dependencies: ["monitoring_integration", "enterprise_security", "flink_compute_pool"]
+    tags:
+      - deployment
+      - production
+      - health-checks
+      - sprint5
+        - api_version
+        - rest_endpoint
+      property_checks:
+        - property: "max_cfu"
+          expected: 10
+        - property: "cloud"
+          expected: "AWS"
+        - property: "region"
+          expected: "us-west-2"
+    dependencies: []
+    tags:
+      - sprint4
+      - flink
+      - compute
+      - streaming
+
+  # Sprint 4: Flink Job Module
+  flink_job:
+    path: "./modules/flink-job"
+    description: "Deploys Flink SQL statements for stream processing"
+    parameters:
+      statement_name: "${TEST_PREFIX}-flink-job-${TEST_SUFFIX}"
+      compute_pool_id: "${flink_compute_pool.compute_pool_id}"
+      principal: "${CONFLUENT_CLOUD_SERVICE_ACCOUNT}"
+      sql_file_path: "flink/sql/transformations/user-enrichment.sql"
+      properties:
+        "sql.local-time-zone": "UTC"
+    validation:
+      resource_count: 1
+      resource_type: "confluent_flink_statement"
+      required_outputs:
+        - statement_name
+        - statement_id
+        - status
+      property_checks:
+        - property: "status"
+          expected: "RUNNING"
+    dependencies: ["flink_compute_pool"]
+    tags:
+      - sprint4
+      - flink
+      - sql
+      - transformation
+
+  # Sprint 4: Flink Testing Module
+  flink_testing:
+    path: "./modules/flink-testing"
+    description: "Comprehensive Flink testing orchestration"
+    parameters:
+      test_suite_name: "${TEST_PREFIX}-flink-test-${TEST_SUFFIX}"
+      compute_pool_id: "${flink_compute_pool.compute_pool_id}"
+      test_scenarios:
+        - "user_enrichment"
+        - "event_aggregation" 
+        - "windowed_analytics"
+      source_topics:
+        - "${kafka_topic.topic_name}-input"
+      sink_topics:
+        - "${kafka_topic.topic_name}-output"
+      test_duration_minutes: 5
+    validation:
+      resource_count: 3  # One statement per scenario
+      resource_type: "confluent_flink_statement"
+      required_outputs:
+        - test_results
+        - performance_metrics
+        - data_accuracy
+      custom_validations:
+        - type: "flink_job_status"
+          expected: "COMPLETED"
+        - type: "data_accuracy"
+          threshold: 0.99
+        - type: "throughput"
+          min_records_per_second: 100
+    dependencies: ["flink_compute_pool", "kafka_topic"]
+    tags:
+      - sprint4
+      - flink
+      - testing
+      - validation
+
+  rbac_cluster_admin:
+    path: "./modules/rbac"
+    description: "Creates RBAC role binding for cluster administration"
+    parameters:
+      principal: "${TEST_SERVICE_ACCOUNT}"
+      role: "CloudClusterAdmin"
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+    validation:
+      resource_count: 1
+      resource_type: "confluent_role_binding"
+      required_outputs:
+        - role_binding_id
+        - principal
+        - role_name
+      property_checks:
+        - property: "role_name"
+          expected: "CloudClusterAdmin"
+    dependencies: []
+    tags:
+      - security
+      - rbac
+      - admin
+
+  rbac_topic_access:
+    path: "./modules/rbac"
+    description: "Creates RBAC role binding for topic-specific access"
+    parameters:
+      principal: "${TEST_SERVICE_ACCOUNT}"
+      role: "DeveloperWrite"
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      topic_name: "${TEST_PREFIX}-topic-${TEST_SUFFIX}"
+    validation:
+      resource_count: 1
+      resource_type: "confluent_role_binding"
+      required_outputs:
+        - role_binding_id
+        - principal
+        - role_name
+      property_checks:
+        - property: "role_name"
+          expected: "DeveloperWrite"
+    dependencies:
+      - kafka_topic
+    tags:
+      - security
+      - rbac
+      - topic-access
+
+  s3_source_connector:
+    path: "./modules/s3-source-connector"
+    description: "Creates S3 source connector for data ingestion"
+    parameters:
+      connector_name: "${TEST_PREFIX}-s3-source-${TEST_SUFFIX}"
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      s3_bucket: "${TEST_S3_BUCKET}"
+      aws_access_key_id: "${AWS_ACCESS_KEY_ID}"
+      aws_secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
+      kafka_api_key: "${CONFLUENT_KAFKA_API_KEY}"
+      kafka_api_secret: "${CONFLUENT_KAFKA_API_SECRET}"
+      topics_dir: "test-data"
+      input_data_format: "JSON"
+      output_data_format: "JSON"
+      tasks_max: 1
+    validation:
+      resource_count: 1
+      resource_type: "confluent_connector"
+      required_outputs:
+        - connector_id
+        - connector_name
+        - connector_status
+      property_checks:
+        - property: "connector_class"
+          expected: "S3Source"
+      api_checks:
+        - check_connector_exists: true
+        - verify_connector_status: ["RUNNING", "PAUSED"]
+    dependencies:
+      - kafka_topic
+      - rbac_cluster_admin
+    tags:
+      - connectors
+      - s3
+      - source
+    enabled: false  # Disabled by default due to AWS dependencies
+
+  # Sprint 3: Schema Registry Module
+  schema_registry:
+    path: "./modules/schema-registry"
+    description: "Creates Schema Registry with multi-format schema support"
+    parameters:
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      service_account_id: "${TEST_SERVICE_ACCOUNT_ID}"
+      subject_prefix: "${TEST_PREFIX}-schema"
+      package_type: "ESSENTIALS"
+      region_id: "sgreg-1"
+      enable_avro: true
+      enable_protobuf: true
+      enable_json_schema: true
+      sr_api_key: "${SCHEMA_REGISTRY_API_KEY}"
+      sr_api_secret: "${SCHEMA_REGISTRY_API_SECRET}"
+    validation:
+      resource_count: 4  # SR cluster + 3 schemas
+      resource_type: "confluent_schema_registry_cluster"
+      required_outputs:
+        - schema_registry_id
+        - schema_registry_rest_endpoint
+        - avro_schema_id
+        - protobuf_schema_id
+        - json_schema_id
+      property_checks:
+        - property: "package"
+          expected: "ESSENTIALS"
+    dependencies: []
+    tags:
+      - sprint3
+      - schema-registry
+      - data-formats
+
+  # Sprint 3: SMT Connector Module
+  smt_connector:
+    path: "./modules/smt-connector"
+    description: "Creates connectors with SMT transformations for testing"
+    parameters:
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      kafka_rest_endpoint: "${CONFLUENT_KAFKA_REST_ENDPOINT}"
+      kafka_api_key: "${CONFLUENT_KAFKA_API_KEY}"
+      kafka_api_secret: "${CONFLUENT_KAFKA_API_SECRET}"
+      connector_name: "${TEST_PREFIX}-smt-test"
+      partitions: 3
+      output_data_format: "JSON"
+      max_iterations: 100
+      enable_verification_sink: true
+      smt_transformations:
+        transforms: "renameFields,convertTypes"
+        transforms.renameFields.type: "org.apache.kafka.connect.transforms.ReplaceField$Value"
+        transforms.renameFields.renames: "username:full_name,email:email_address"
+        transforms.convertTypes.type: "org.apache.kafka.connect.transforms.Cast$Value"
+        transforms.convertTypes.spec: "user_id:int32,timestamp:int64"
+    validation:
+      resource_count: 3  # source topic + target topic + connector
+      resource_type: "confluent_connector"
+      required_outputs:
+        - connector_id
+        - connector_name
+        - source_topic_name
+        - target_topic_name
+      property_checks:
+        - property: "connector_status"
+          expected: "RUNNING"
+    dependencies:
+      - kafka_topic
+    tags:
+      - sprint3
+      - smt
+      - transformations
+      - connectors
+    enabled: true
+
+  # Enhanced RBAC validation for Sprint 3
+  rbac_enhanced_validation:
+    path: "./modules/rbac"
+    description: "Enhanced RBAC testing with comprehensive security validation"
+    parameters:
+      principal: "${TEST_SERVICE_ACCOUNT}"
+      role: "DeveloperManage"
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      topic_name: "${TEST_PREFIX}-security-test"
+    validation:
+      resource_count: 1
+      resource_type: "confluent_role_binding"
+      required_outputs:
+        - role_binding_id
+        - principal
+        - role_name
+      property_checks:
+        - property: "role_name"
+          expected: "DeveloperManage"
+      security_checks:
+        - validate_least_privilege: true
+        - check_cross_environment_access: false
+        - verify_role_separation: true
+    dependencies:
+      - kafka_topic
+    tags:
+      - sprint3
+      - security
+      - rbac
+      - enhanced-validation
+    enabled: true
+
+# Global configuration
+global:
+  test_prefix: "tftest"
+  parallel_execution: true
+  max_parallel_modules: 3
+  cleanup_on_failure: true
+  cleanup_on_success: true
+  timeout_minutes: 30
+  retry_attempts: 2
+  
+# Test execution modes
+execution_modes:
+  - name: "basic"
+    description: "Basic functionality test with core modules"
+    modules:
+      - kafka_topic
+      - rbac_cluster_admin
+      - rbac_topic_access
+    
+  - name: "full"
+    description: "Full integration test with all modules"
+    modules:
+      - kafka_topic
+      - rbac_cluster_admin
+      - rbac_topic_access
+      - s3_source_connector
+      - schema_registry
+      - smt_connector
+      - rbac_enhanced_validation
+
+  - name: "sprint3"
+    description: "Sprint 3 enhanced features testing"
+    modules:
+      - kafka_topic
+      - schema_registry
+      - smt_connector
+      - rbac_enhanced_validation
+    
+  - name: "security"
+    description: "Security-focused test with RBAC modules"
+    modules:
+      - rbac_cluster_admin
+      - rbac_topic_access
+
+# Environment variable mappings
+environment_variables:
+  required:
+    - CONFLUENT_CLOUD_API_KEY
+    - CONFLUENT_CLOUD_API_SECRET
+    - CONFLUENT_ENVIRONMENT_ID
+    - CONFLUENT_CLUSTER_ID
+  optional:
+    - TEST_S3_BUCKET
+    - AWS_ACCESS_KEY_ID
+    - AWS_SECRET_ACCESS_KEY
+    - CONFLUENT_KAFKA_API_KEY
+    - CONFLUENT_KAFKA_API_SECRET
+    - TEST_SERVICE_ACCOUNT
+  
+# Sprint 2: E2E Data Flow Testing Modules
+
+  e2e_basic_flow:
+    path: "./modules/e2e-basic-flow"
+    description: "End-to-end data flow testing: Producer -> Source -> Sink -> Consumer"
+    parameters:
+      test_prefix: "${TEST_PREFIX}-basic-flow"
+      message_count: 100
+      data_format: "json"
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      s3_bucket: "${TEST_S3_BUCKET}"
+      database_url: "${TEST_DATABASE_URL}"
+      aws_access_key_id: "${AWS_ACCESS_KEY_ID}"
+      aws_secret_access_key: "${AWS_SECRET_ACCESS_KEY}"
+    validation:
+      resource_count: 4  # Input topic, output topic, S3 source connector, Postgres sink connector
+      resource_types: ["confluent_kafka_topic", "confluent_connector"]
+      required_outputs:
+        - kafka_input_topic_name
+        - kafka_output_topic_name
+        - s3_source_connector_name
+        - postgres_sink_connector_name
+      data_flow_validation:
+        - source_to_sink_integrity: true
+        - message_ordering: true
+        - delivery_guarantee: "at_least_once"
+    dependencies: []
+    tags:
+      - e2e
+      - data-flow
+      - connectors
+      - sprint2
+
+  e2e_consumer_groups:
+    path: "./modules/e2e-consumer-groups"
+    description: "Consumer groups testing with multiple consumer groups on same topic"
+    parameters:
+      test_prefix: "${TEST_PREFIX}-consumer-groups"
+      partitions_count: 6
+      consumer_groups_count: 3
+      message_count: 500
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+    validation:
+      resource_count: 1  # Topic
+      resource_type: "confluent_kafka_topic"
+      required_outputs:
+        - kafka_topic_name
+        - topic_partitions
+        - consumer_groups_config
+      consumer_group_validation:
+        - partition_assignment: true
+        - rebalancing: true
+        - offset_management: true
+    dependencies: []
+    tags:
+      - e2e
+      - consumer-groups
+      - kafka
+      - sprint2
+
+  e2e_performance:
+    path: "./modules/e2e-performance"
+    description: "Performance testing for high-throughput producer-consumer scenarios"
+    parameters:
+      test_prefix: "${TEST_PREFIX}-performance"
+      partitions_count: 12
+      message_count: 1000
+      target_throughput: 100  # messages per second
+      max_latency_ms: 5000
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+    validation:
+      resource_count: 1
+      resource_type: "confluent_kafka_topic"
+      required_outputs:
+        - kafka_topic_name
+        - performance_metrics
+        - throughput_results
+      performance_validation:
+        - throughput_threshold: 80  # 80% of target
+        - latency_threshold: 5000   # 5 seconds max
+        - success_rate: 95          # 95% success rate
+    dependencies: []
+    tags:
+      - e2e
+      - performance
+      - kafka
+      - sprint2
+
+  # Additional Sprint 2 connector modules
+  
+  postgres_sink_connector:
+    path: "./modules/postgres-sink-connector"
+    description: "PostgreSQL sink connector for streaming data to database"
+    parameters:
+      connector_name: "${TEST_PREFIX}-postgres-sink"
+      environment_id: "${CONFLUENT_ENVIRONMENT_ID}"
+      cluster_id: "${CONFLUENT_CLUSTER_ID}"
+      topics: "${KAFKA_TOPIC_NAME}"
+      database_url: "${TEST_DATABASE_URL}"
+      database_user: "${TEST_DATABASE_USER}"
+      database_password: "${TEST_DATABASE_PASSWORD}"
+      table_name: "confluent_test_events"
+      auto_create: true
+      auto_evolve: true
+      insert_mode: "upsert"
+      pk_fields: "id"
+    validation:
+      resource_count: 1
+      resource_type: "confluent_connector"
+      required_outputs:
+        - connector_name
+        - connector_id
+        - connector_status
+      property_checks:
+        - property: "config.connector.class"
+          expected: "PostgresSink"
+    dependencies: ["kafka_topic"]
+    tags:
+      - connectors
+      - sink
+      - postgres
+      - sprint2
+
+# Test execution plans for Sprint 2
+
+plans:
+  basic_e2e:
+    description: "Basic end-to-end data flow testing"
+    modules:
+      - e2e_basic_flow
+    execution_order: sequential
+    
+  consumer_groups_e2e:
+    description: "Consumer groups testing scenarios"
+    modules:
+      - e2e_consumer_groups
+    execution_order: sequential
+    
+  performance_e2e:
+    description: "Performance and load testing"
+    modules:
+      - e2e_performance
+    execution_order: sequential
+    
+  full_e2e:
+    description: "Complete end-to-end testing suite"
+    modules:
+      - e2e_basic_flow
+      - e2e_consumer_groups
+      - e2e_performance
+    execution_order: sequential
+    
+  connector_integration:
+    description: "Connector integration testing"
+    modules:
+      - kafka_topic
+      - s3_source_connector
+      - postgres_sink_connector
+    execution_order: sequential
+
+# Validation rules
+validation_rules:
+  resource_creation:
+    timeout_seconds: 300
+    check_interval_seconds: 10
+  
+  api_verification:
+    timeout_seconds: 180
+    retry_interval_seconds: 5
+    max_retries: 10
+  
+  cleanup_verification:
+    timeout_seconds: 120
+    check_deletion: true
+    
+  # Sprint 2: E2E validation rules
+  data_flow_validation:
+    timeout_seconds: 600
+    message_validation_timeout: 300
+    connector_startup_timeout: 180
+    data_integrity_checks: true
+    
+  performance_validation:
+    measurement_duration: 300  # 5 minutes
+    warmup_duration: 60       # 1 minute warmup
+    throughput_tolerance: 0.2  # 20% tolerance
+    latency_tolerance: 0.1     # 10% tolerance

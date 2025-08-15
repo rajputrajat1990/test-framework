@@ -1,0 +1,66 @@
+# Example Environment Configuration
+# Copy this file to config/environments/local.yaml and customize for your setup
+
+environment:
+  name: "local"
+  description: "Local development and testing environment"
+  
+# Your Confluent Cloud settings - REPLACE WITH YOUR ACTUAL VALUES
+confluent_cloud:
+  environment_id: "env-123456"    # Replace with your environment ID
+  cluster_id: "lkc-abcdef"       # Replace with your cluster ID
+  region: "us-west-2"
+  cloud: "aws"
+
+# Test execution settings
+testing:
+  execution_mode: "apply"         # Use "plan" for dry-run testing
+  cleanup_policy: "always"       # Options: always, on_success, never
+  resource_prefix: "local-test"
+  timeout_minutes: 15            # Reduced timeout for local testing
+  
+# Module-specific settings for local environment
+module_overrides:
+  kafka_topic:
+    parameters:
+      partitions: 1              # Single partition for local testing
+      topic_config:
+        retention.ms: "86400000" # 1 day retention for local
+        
+  s3_source_connector:
+    enabled: false               # Disable by default (requires AWS setup)
+    parameters:
+      tasks_max: 1
+    
+  rbac_cluster_admin:
+    parameters:
+      # Replace with your user email or service account
+      principal: "User:your-email@example.com"
+
+  rbac_topic_access:
+    parameters:
+      # Replace with your user email or service account  
+      principal: "User:your-email@example.com"
+
+# Validation settings
+validation:
+  strict_mode: false             # Relaxed validation for local development
+  skip_api_verification: false
+  allow_partial_failures: true
+  
+# Logging configuration
+logging:
+  level: "INFO"                  # Options: DEBUG, INFO, WARN, ERROR
+  include_sensitive: false       # Never log sensitive data
+  log_file: "local-test.log"
+
+# Resource limits to prevent accidental overuse
+limits:
+  max_topics: 3
+  max_connectors: 1
+  max_role_bindings: 5
+
+# Performance settings
+performance:
+  load_test_enabled: false       # Disable load testing in local env
+  concurrent_operations: 1       # Single operation at a time

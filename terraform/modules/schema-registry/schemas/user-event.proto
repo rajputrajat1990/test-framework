@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package com.confluent.test;
+
+message UserEvent {
+  string user_id = 1;
+  EventType event_type = 2;
+  int64 timestamp = 3;
+  map<string, string> properties = 4;
+  optional string session_id = 5;
+  optional string user_agent = 6;
+}
+
+enum EventType {
+  LOGIN = 0;
+  LOGOUT = 1;
+  PURCHASE = 2;
+  VIEW = 3;
+  CLICK = 4;
+}

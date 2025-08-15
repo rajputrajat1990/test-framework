@@ -1,0 +1,144 @@
+# Docker Compose for Local GitLab CE with Runners
+# This setup provides a complete GitLab instance with runners for CI/CD testing
+version: '3.8'
+
+services:
+  # GitLab CE Server
+  gitlab:
+    image: gitlab/gitlab-ce:16.7.0-ce.0
+    container_name: gitlab-ce
+    restart: always
+    hostname: 'gitlab.local'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        # External URL configuration
+        external_url 'http://gitlab.local'
+        
+        # GitLab configuration
+        gitlab_rails['time_zone'] = 'UTC'
+        gitlab_rails['gitlab_email_enabled'] = false
+        gitlab_rails['gitlab_default_projects_limit'] = 100
+        
+        # Disable unused services to save resources
+        prometheus_monitoring['enable'] = false
+        alertmanager['enable'] = false
+        grafana['enable'] = false
+        
+        # Registry configuration
+        registry_external_url 'http://gitlab.local:5050'
+        gitlab_rails['registry_enabled'] = true
+        
+        # Runner registration token (will be visible in GitLab Admin)
+        gitlab_rails['initial_root_password'] = 'rootpassword123'
+        
+        # CI/CD settings
+        gitlab_rails['gitlab_default_projects_features_builds'] = true
+        gitlab_rails['gitlab_default_projects_features_container_registry'] = true
+        
+        # Auto DevOps disable to avoid resource usage
+        gitlab_rails['auto_devops_enabled'] = false
+        
+    ports:
+      - '8080:80'      # GitLab web interface
+      - '8443:443'     # HTTPS (if needed)
+      - '8022:22'      # GitLab SSH
+      - '5050:5050'    # Container Registry
+    volumes:
+      - gitlab-config:/etc/gitlab
+      - gitlab-logs:/var/log/gitlab
+      - gitlab-data:/var/opt/gitlab
+    networks:
+      - gitlab-network
+    shm_size: '256m'
+
+  # GitLab Runner 1 - Shell Executor (for Terraform commands)
+  gitlab-runner-shell:
+    image: gitlab/gitlab-runner:v16.7.0
+    container_name: gitlab-runner-shell
+    restart: always
+    volumes:
+      - gitlab-runner-config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/local/bin/docker:/usr/local/bin/docker:ro
+    networks:
+      - gitlab-network
+    environment:
+      - RUNNER_NAME=shell-runner
+      - RUNNER_EXECUTOR=shell
+    depends_on:
+      - gitlab
+
+  # GitLab Runner 2 - Docker Executor (for containerized tests)  
+  gitlab-runner-docker:
+    image: gitlab/gitlab-runner:v16.7.0
+    container_name: gitlab-runner-docker
+    restart: always
+    volumes:
+      - gitlab-runner-docker-config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - gitlab-network
+    environment:
+      - RUNNER_NAME=docker-runner
+      - RUNNER_EXECUTOR=docker
+    depends_on:
+      - gitlab
+
+  # GitLab Runner 3 - Kubernetes Executor (for advanced testing)
+  gitlab-runner-k8s:
+    image: gitlab/gitlab-runner:v16.7.0
+    container_name: gitlab-runner-k8s
+    restart: always
+    volumes:
+      - gitlab-runner-k8s-config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - gitlab-network
+    environment:
+      - RUNNER_NAME=k8s-runner
+      - RUNNER_EXECUTOR=kubernetes
+    depends_on:
+      - gitlab
+
+  # Redis for GitLab (optional - GitLab includes its own Redis)
+  # Uncomment if you need external Redis
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: gitlab-redis
+  #   restart: always
+  #   networks:
+  #     - gitlab-network
+  #   volumes:
+  #     - gitlab-redis-data:/data
+
+  # PostgreSQL for GitLab (optional - GitLab includes its own PostgreSQL)
+  # Uncomment if you need external PostgreSQL
+  # postgresql:
+  #   image: postgres:15-alpine
+  #   container_name: gitlab-postgresql
+  #   restart: always
+  #   environment:
+  #     POSTGRES_DB: gitlabhq_production
+  #     POSTGRES_USER: gitlab
+  #     POSTGRES_PASSWORD: gitlab
+  #   networks:
+  #     - gitlab-network
+  #   volumes:
+  #     - gitlab-postgresql-data:/var/lib/postgresql/data
+
+volumes:
+  gitlab-config:
+  gitlab-logs:
+  gitlab-data:
+  gitlab-runner-config:
+  gitlab-runner-docker-config:
+  gitlab-runner-k8s-config:
+  # gitlab-redis-data:
+  # gitlab-postgresql-data:
+
+networks:
+  gitlab-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

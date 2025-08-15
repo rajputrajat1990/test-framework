@@ -1,0 +1,122 @@
+# Development Environment Configuration
+
+environment:
+  name: "dev"
+  description: "Development environment for testing"
+  
+# Confluent Cloud settings
+confluent_cloud:
+  environment_id: "env-dev123"  # Replace with actual dev environment ID
+  cluster_id: "lkc-dev456"      # Replace with actual dev cluster ID
+  region: "us-west-2"
+  cloud: "aws"
+
+# Test-specific settings
+testing:
+  execution_mode: "apply"
+  cleanup_policy: "always"
+  resource_prefix: "dev-test"
+  timeout_minutes: 20
+
+# Sprint 2: E2E Testing Configuration
+e2e_testing:
+  # Data flow testing
+  data_flow:
+    message_count: 100
+    data_formats: ["json", "avro"]
+    batch_size: 10
+    timeout_seconds: 300
+    
+  # Consumer groups testing
+  consumer_groups:
+    groups_count: 3
+    partitions_count: 6
+    message_count: 500
+    offset_commit_interval_ms: 5000
+    
+  # Performance testing
+  performance:
+    message_count: 1000
+    target_throughput_per_second: 100
+    max_latency_ms: 5000
+    test_duration_minutes: 10
+
+# External service integrations for testing
+external_services:
+  # S3 for source connector testing
+  s3:
+    bucket_name: "confluent-dev-test-data"
+    region: "us-west-2"
+    prefix: "test-data/"
+    
+  # PostgreSQL for sink connector testing
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "confluent_test_dev"
+    schema: "public"
+    table_prefix: "test_"
+    
+  # Schema Registry
+  schema_registry:
+    enabled: true
+    compatibility_level: "BACKWARD"
+
+# CI/CD Pipeline Configuration
+pipeline:
+  # Notification settings
+  notifications:
+    slack:
+      enabled: true
+      webhook_url_env: "TEST_NOTIFICATION_WEBHOOK"
+      
+    email:
+      enabled: false
+      recipients: []
+      
+  # Resource cleanup
+  cleanup:
+    enabled: true
+    retention_days: 7
+    force_cleanup_on_failure: false
+    
+  # Parallel execution settings
+  parallel:
+    enabled: true
+    max_workers: 3
+  
+# Module-specific overrides for dev environment
+module_overrides:
+  kafka_topic:
+    parameters:
+      partitions: 1  # Reduced for dev environment
+      topic_config:
+        retention.ms: "86400000"  # 1 day for dev
+        
+  s3_source_connector:
+    parameters:
+      tasks_max: 1
+    enabled: false  # Disabled in dev unless AWS creds available
+    
+  rbac_cluster_admin:
+    parameters:
+      # Use dev service account
+      principal: "User:dev-test-user@example.com"
+
+# Validation settings
+validation:
+  strict_mode: false
+  skip_api_verification: false
+  allow_partial_failures: true
+  
+# Logging
+logging:
+  level: "DEBUG"
+  include_sensitive: false
+  log_file: "dev-test.log"
+
+# Resource limits
+limits:
+  max_topics: 5
+  max_connectors: 2
+  max_role_bindings: 10

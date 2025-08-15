@@ -1,0 +1,3 @@
+{"user_id": "user123", "event_type": "INVALID_TYPE", "timestamp": -1, "properties": {}}
+{"user_id": "", "event_type": "LOGIN", "timestamp": "invalid_timestamp"}
+{"user_id": "user789", "missing_required_field": "LOGIN"}

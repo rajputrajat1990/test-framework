@@ -1,0 +1,4 @@
+user_id,event_type,timestamp,properties,session_id
+user123,LOGIN,1692144000000,"{\"page\":\"home\"}",sess123
+user456,PURCHASE,1692144060000,"{\"product\":\"laptop\",\"price\":\"999.99\"}",sess456
+user789,VIEW,1692144120000,"{\"page\":\"product\",\"product_id\":\"prod123\"}",

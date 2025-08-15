@@ -1,0 +1,3 @@
+{"user_id": "user_with_very_long_id_that_exceeds_normal_length_limits", "event_type": "LOGIN", "timestamp": 0}
+{"user_id": "user123", "event_type": "LOGIN", "timestamp": 9223372036854775807, "properties": {}}
+{"user_id": "user123", "event_type": "LOGIN", "timestamp": 1692144000000, "properties": {"key": ""}, "session_id": null}

@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UserEvent",
+  "type": "object",
+  "required": ["user_id", "event_type", "timestamp"],
+  "properties": {
+    "user_id": {
+      "type": "string",
+      "description": "Unique identifier for the user",
+      "minLength": 1
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["LOGIN", "LOGOUT", "PURCHASE", "VIEW", "CLICK"],
+      "description": "Type of user event"
+    },
+    "timestamp": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Event timestamp in milliseconds"
+    },
+    "properties": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Additional event properties"
+    },
+    "session_id": {
+      "type": ["string", "null"],
+      "description": "Optional session identifier"
+    },
+    "user_agent": {
+      "type": ["string", "null"],
+      "description": "User agent string"
+    }
+  },
+  "additionalProperties": false
+}

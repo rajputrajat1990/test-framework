@@ -1,0 +1,4 @@
+user_id,event_type,timestamp,properties,session_id
+,LOGIN,1692144000000,"{\"page\":\"home\"}",sess123
+user456,INVALID_TYPE,invalid_timestamp,"{\"product\":\"laptop\"}",sess456
+user789,VIEW,-1,malformed_json,

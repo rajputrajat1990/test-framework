@@ -1,0 +1,341 @@
+# Sprint 4: Test Selection Configuration
+# Smart test selection based on code changes and dependencies
+
+# Test selection strategy configuration
+test_selection:
+  # Change detection configuration
+  change_detection:
+    # Path-based test selection
+    paths:
+      - path: "terraform/modules/flink-job/"
+        tests: ["flink_transformation_tests", "streaming_tests"]
+        priority: "high"
+        impact: "major"
+      
+      - path: "terraform/modules/compute-pool/"
+        tests: ["flink_compute_pool_tests", "resource_allocation_tests"]
+        priority: "high"
+        impact: "major"
+      
+      - path: "terraform/modules/flink-testing/"
+        tests: ["end_to_end_flink_tests", "performance_validation_tests"]
+        priority: "high"
+        impact: "major"
+      
+      - path: "flink/sql/transformations/"
+        tests: ["transformation_accuracy_tests", "sql_validation_tests"]
+        priority: "high"
+        impact: "major"
+      
+      - path: "flink/sql/tests/"
+        tests: ["validation_query_tests", "test_correctness_validation"]
+        priority: "medium"
+        impact: "minor"
+      
+      - path: "terraform/modules/connectors/"
+        tests: ["connector_tests", "e2e_connector_flow"]
+        priority: "medium"
+        impact: "moderate"
+      
+      - path: "terraform/modules/topics/"
+        tests: ["topic_tests", "basic_producer_consumer"]
+        priority: "low"
+        impact: "minor"
+      
+      - path: "terraform/modules/rbac/"
+        tests: ["rbac_tests", "security_validation"]
+        priority: "medium"
+        impact: "moderate"
+      
+      - path: "terraform/modules/schema-registry/"
+        tests: ["schema_tests", "data_format_validation"]
+        priority: "medium"
+        impact: "moderate"
+      
+      - path: "terraform/modules/smt-connector/"
+        tests: ["smt_tests", "transformation_tests"]
+        priority: "medium"
+        impact: "moderate"
+      
+      - path: "scripts/"
+        tests: ["integration_tests", "script_validation_tests"]
+        priority: "low"
+        impact: "minor"
+      
+      - path: "config/"
+        tests: ["configuration_tests", "basic_validation"]
+        priority: "low"
+        impact: "minor"
+      
+      - path: ".gitlab-ci.yml"
+        tests: ["pipeline_tests", "ci_cd_validation"]
+        priority: "high"
+        impact: "major"
+
+    # File type based detection
+    file_types:
+      - extension: ".sql"
+        tests: ["sql_syntax_tests", "transformation_validation"]
+        priority: "high"
+      
+      - extension: ".tf"
+        tests: ["terraform_validation", "resource_creation_tests"]
+        priority: "high"
+      
+      - extension: ".hcl"
+        tests: ["terraform_tests", "configuration_validation"]
+        priority: "high"
+      
+      - extension: ".yaml"
+        tests: ["configuration_tests", "yaml_validation"]
+        priority: "medium"
+      
+      - extension: ".sh"
+        tests: ["script_tests", "bash_validation"]
+        priority: "low"
+
+    # Keywords that trigger specific tests
+    keywords:
+      - keyword: "flink"
+        tests: ["flink_transformation_tests", "streaming_tests", "performance_tests"]
+        priority: "high"
+      
+      - keyword: "transformation"
+        tests: ["transformation_accuracy_tests", "data_validation_tests"]
+        priority: "high"
+      
+      - keyword: "smt"
+        tests: ["smt_tests", "connector_transformation_tests"]
+        priority: "medium"
+      
+      - keyword: "rbac"
+        tests: ["security_tests", "rbac_validation_tests"]
+        priority: "medium"
+      
+      - keyword: "performance"
+        tests: ["performance_tests", "load_tests", "benchmark_tests"]
+        priority: "high"
+      
+      - keyword: "schema"
+        tests: ["schema_validation_tests", "data_format_tests"]
+        priority: "medium"
+
+  # Test dependencies mapping
+  dependencies:
+    # Core dependencies - always run first
+    basic_validation:
+      requires: []
+      provides: ["terraform_syntax", "configuration_validation"]
+      estimated_duration: "2m"
+    
+    terraform_validation:
+      requires: ["basic_validation"]
+      provides: ["resource_validation", "infrastructure_readiness"]
+      estimated_duration: "3m"
+    
+    # Infrastructure tests
+    compute_pool_tests:
+      requires: ["terraform_validation"]
+      provides: ["flink_compute_infrastructure"]
+      estimated_duration: "8m"
+    
+    topic_tests:
+      requires: ["terraform_validation"]
+      provides: ["kafka_infrastructure"]
+      estimated_duration: "5m"
+    
+    # Flink-specific tests
+    flink_job_creation_tests:
+      requires: ["compute_pool_tests", "topic_tests"]
+      provides: ["flink_jobs_deployed"]
+      estimated_duration: "10m"
+    
+    flink_transformation_tests:
+      requires: ["flink_job_creation_tests"]
+      provides: ["transformation_validation"]
+      estimated_duration: "15m"
+    
+    streaming_tests:
+      requires: ["flink_transformation_tests"]
+      provides: ["streaming_validation"]
+      estimated_duration: "12m"
+    
+    performance_validation_tests:
+      requires: ["streaming_tests"]
+      provides: ["performance_validation"]
+      estimated_duration: "20m"
+    
+    # Integration tests
+    connector_tests:
+      requires: ["topic_tests", "rbac_tests"]
+      provides: ["connector_functionality"]
+      estimated_duration: "8m"
+    
+    smt_tests:
+      requires: ["connector_tests"]
+      provides: ["smt_functionality"]
+      estimated_duration: "10m"
+    
+    schema_tests:
+      requires: ["topic_tests"]
+      provides: ["schema_registry_functionality"]
+      estimated_duration: "6m"
+    
+    rbac_tests:
+      requires: ["terraform_validation"]
+      provides: ["security_infrastructure"]
+      estimated_duration: "7m"
+    
+    # End-to-end tests
+    e2e_basic_flow:
+      requires: ["connector_tests", "topic_tests"]
+      provides: ["basic_data_flow_validation"]
+      estimated_duration: "15m"
+    
+    e2e_flink_flow:
+      requires: ["flink_transformation_tests", "performance_validation_tests"]
+      provides: ["complete_flink_validation"]
+      estimated_duration: "25m"
+    
+    comprehensive_e2e:
+      requires: ["e2e_basic_flow", "e2e_flink_flow", "smt_tests", "schema_tests"]
+      provides: ["full_system_validation"]
+      estimated_duration: "35m"
+
+  # Execution strategy configuration
+  execution_strategy:
+    # Parallel execution limits
+    parallel_limit: 8
+    max_concurrent_flink_tests: 2  # Flink tests are resource intensive
+    max_concurrent_e2e_tests: 1    # E2E tests need exclusive resources
+    
+    # Timeouts
+    default_timeout: "30m"
+    flink_test_timeout: "45m"
+    e2e_test_timeout: "60m"
+    performance_test_timeout: "90m"
+    
+    # Retry configuration
+    retry_failed_tests: 2
+    retry_delay: "30s"
+    retry_exponential_backoff: true
+    
+    # Resource management
+    resource_allocation:
+      flink_tests:
+        cpu_limit: "2000m"
+        memory_limit: "4Gi"
+        storage_limit: "10Gi"
+      
+      e2e_tests:
+        cpu_limit: "1000m"
+        memory_limit: "2Gi"
+        storage_limit: "5Gi"
+      
+      standard_tests:
+        cpu_limit: "500m"
+        memory_limit: "1Gi"
+        storage_limit: "2Gi"
+
+# Test prioritization rules
+prioritization:
+  # Priority levels (highest to lowest)
+  levels:
+    - name: "critical"
+      description: "Critical path tests that must always pass"
+      weight: 100
+      tests: ["basic_validation", "terraform_validation", "security_tests"]
+    
+    - name: "high"
+      description: "High impact tests for core functionality"
+      weight: 80
+      tests: ["flink_transformation_tests", "streaming_tests", "performance_tests"]
+    
+    - name: "medium"
+      description: "Important tests for extended functionality"
+      weight: 60
+      tests: ["connector_tests", "smt_tests", "schema_tests", "e2e_basic_flow"]
+    
+    - name: "low"
+      description: "Nice-to-have tests and edge cases"
+      weight: 40
+      tests: ["integration_tests", "script_validation_tests", "documentation_tests"]
+
+  # Prioritization factors
+  factors:
+    - factor: "change_impact"
+      weight: 0.4
+      description: "Impact of code changes on functionality"
+    
+    - factor: "test_reliability"
+      weight: 0.3
+      description: "Historical reliability of tests"
+    
+    - factor: "execution_time"
+      weight: 0.2
+      description: "Test execution duration (favor faster tests)"
+    
+    - factor: "business_criticality"
+      weight: 0.1
+      description: "Business importance of tested functionality"
+
+# Quality gates for test selection
+quality_gates:
+  # Minimum test coverage requirements
+  coverage_requirements:
+    critical_path_coverage: 100
+    high_priority_coverage: 85
+    medium_priority_coverage: 70
+    low_priority_coverage: 50
+  
+  # Test selection criteria
+  selection_criteria:
+    # Always run critical tests
+    always_run: ["basic_validation", "terraform_validation", "security_tests"]
+    
+    # Never skip these tests in main branch
+    main_branch_required: ["flink_transformation_tests", "e2e_basic_flow", "performance_tests"]
+    
+    # Can be skipped in feature branches if no changes
+    skippable_in_feature: ["documentation_tests", "integration_tests"]
+    
+    # Maximum test execution time budget
+    time_budget:
+      feature_branch: "45m"
+      main_branch: "90m"
+      scheduled_run: "180m"
+      
+    # Minimum success rate for test inclusion
+    min_success_rate: 85
+
+# Branch-specific configurations
+branch_configs:
+  main:
+    test_selection_mode: "comprehensive"
+    required_coverage: 90
+    allow_test_skipping: false
+    max_execution_time: "90m"
+    
+  develop:
+    test_selection_mode: "smart"
+    required_coverage: 80
+    allow_test_skipping: true
+    max_execution_time: "60m"
+    
+  feature/*:
+    test_selection_mode: "smart"
+    required_coverage: 70
+    allow_test_skipping: true
+    max_execution_time: "45m"
+    
+  hotfix/*:
+    test_selection_mode: "targeted"
+    required_coverage: 95
+    allow_test_skipping: false
+    max_execution_time: "30m"
+    
+  release/*:
+    test_selection_mode: "comprehensive"
+    required_coverage: 95
+    allow_test_skipping: false
+    max_execution_time: "120m"

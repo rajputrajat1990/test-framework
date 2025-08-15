@@ -1,0 +1,14 @@
+{
+  "test_name": "Cluster Admin Role Test",
+  "description": "Validate full cluster administration permissions",
+  "principal": "User:test-admin",
+  "role": "CloudClusterAdmin",
+  "resource_type": "kafka-cluster",
+  "expected_permissions": [
+    "CREATE", "DELETE", "ALTER", "DESCRIBE", "CLUSTER_ACTION"
+  ],
+  "test_resources": [
+    "topics", "consumer-groups", "connectors", "schemas"
+  ],
+  "should_succeed": true
+}

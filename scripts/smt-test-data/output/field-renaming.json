@@ -1,0 +1,15 @@
+{
+  "user_age": 30,
+  "full_name": "john",
+  "email": "john@example.com"
+}
+{
+  "user_age": 25,
+  "full_name": "jane",
+  "email": "jane@example.com"
+}
+{
+  "user_age": 35,
+  "full_name": "bob",
+  "email": "bob@example.com"
+}

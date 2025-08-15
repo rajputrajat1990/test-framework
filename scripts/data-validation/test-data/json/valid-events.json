@@ -1,0 +1,3 @@
+{"user_id": "user123", "event_type": "LOGIN", "timestamp": 1692144000000, "properties": {"page": "home"}, "session_id": "sess123"}
+{"user_id": "user456", "event_type": "PURCHASE", "timestamp": 1692144060000, "properties": {"product": "laptop", "price": "999.99"}, "session_id": "sess456"}
+{"user_id": "user789", "event_type": "VIEW", "timestamp": 1692144120000, "properties": {"page": "product", "product_id": "prod123"}}

@@ -1,0 +1,3 @@
+{"user_id": "123", "timestamp": "1692144000", "active": "true", "score": "95.5"}
+{"user_id": "456", "timestamp": "1692144060", "active": "false", "score": "87.2"}
+{"user_id": "789", "timestamp": "1692144120", "active": "true", "score": "92.8"}

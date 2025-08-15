@@ -1,0 +1,129 @@
+# Staging Environment Configuration
+# Used for pre-production testing and CI/CD pipeline validation
+
+environment:
+  name: "staging"
+  description: "Staging environment for pre-production testing"
+  
+# Confluent Cloud settings
+confluent_cloud:
+  environment_id: "env-staging789"  # Replace with actual staging environment ID
+  cluster_id: "lkc-staging012"      # Replace with actual staging cluster ID
+  region: "us-west-2"
+  cloud: "aws"
+
+# Test-specific settings
+testing:
+  execution_mode: "apply"
+  cleanup_policy: "on_success"
+  resource_prefix: "staging-test"
+  timeout_minutes: 30
+
+# Sprint 2: E2E Testing Configuration
+e2e_testing:
+  # Data flow testing - More intensive than dev
+  data_flow:
+    message_count: 1000
+    data_formats: ["json", "avro"]
+    batch_size: 50
+    timeout_seconds: 600
+    
+  # Consumer groups testing
+  consumer_groups:
+    groups_count: 5
+    partitions_count: 12
+    message_count: 2000
+    offset_commit_interval_ms: 3000
+    
+  # Performance testing - Production-like load
+  performance:
+    message_count: 10000
+    target_throughput_per_second: 500
+    max_latency_ms: 2000
+    test_duration_minutes: 15
+
+# External service integrations for testing
+external_services:
+  # S3 for source connector testing
+  s3:
+    bucket_name: "confluent-staging-test-data"
+    region: "us-west-2"
+    prefix: "staging-test-data/"
+    
+  # PostgreSQL for sink connector testing
+  postgresql:
+    host: "staging-db.example.com"
+    port: 5432
+    database: "confluent_test_staging"
+    schema: "public"
+    table_prefix: "staging_test_"
+    
+  # Schema Registry
+  schema_registry:
+    enabled: true
+    compatibility_level: "BACKWARD"
+
+# CI/CD Pipeline Configuration
+pipeline:
+  # Notification settings
+  notifications:
+    slack:
+      enabled: true
+      webhook_url_env: "TEST_NOTIFICATION_WEBHOOK"
+      
+    email:
+      enabled: true
+      recipients: ["devops-team@company.com", "qa-team@company.com"]
+      
+  # Resource cleanup - More conservative in staging
+  cleanup:
+    enabled: true
+    retention_days: 14
+    force_cleanup_on_failure: false
+    
+  # Parallel execution settings - Higher capacity
+  parallel:
+    enabled: true
+    max_workers: 5
+  
+# Module-specific overrides for staging environment
+module_overrides:
+  kafka_topic:
+    parameters:
+      partitions: 3  # Full partitions in staging
+      topic_config:
+        retention.ms: "259200000"  # 3 days for staging
+        
+  s3_source_connector:
+    parameters:
+      tasks_max: 2
+    enabled: true  # Enabled in staging with proper AWS setup
+    
+  rbac_cluster_admin:
+    parameters:
+      # Use staging service account
+      principal: "User:staging-test-user@example.com"
+
+# Validation settings
+validation:
+  strict_mode: true
+  skip_api_verification: false
+  allow_partial_failures: false
+  
+# Logging
+logging:
+  level: "INFO"
+  include_sensitive: false
+  log_file: "staging-test.log"
+
+# Resource limits
+limits:
+  max_topics: 10
+  max_connectors: 5
+  max_role_bindings: 20
+
+# Performance testing settings
+performance:
+  load_test_enabled: true
+  concurrent_operations: 3
+  stress_test_duration_minutes: 10

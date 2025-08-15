@@ -1,0 +1,15 @@
+{
+  "test_name": "Developer Write Role Test",
+  "description": "Validate write access permissions",
+  "principal": "User:test-developer-write",
+  "role": "DeveloperWrite",
+  "resource_type": "topic",
+  "resource_name": "test-topic-write",
+  "expected_permissions": [
+    "READ", "WRITE", "DESCRIBE"
+  ],
+  "forbidden_permissions": [
+    "CREATE", "DELETE", "ALTER"
+  ],
+  "should_succeed": true
+}
