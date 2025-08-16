@@ -6,6 +6,7 @@ environment:
   description: "Local development and testing environment"
   
 confluent_cloud:
+  organization_id: "52445b30-3393-47c5-b174-9a856fc7ca26"
   environment_id: "env-33g8y2"
   cluster_id: "lkc-3pg922"
   region: "us-east-2"

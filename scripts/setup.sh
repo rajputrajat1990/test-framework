@@ -162,6 +162,11 @@ plan_cmd=(terraform plan -input=false \
 unset_env_flags=(
     -u CONFLUENT_ORGANIZATION_ID \
     -u CONFLUENT_ENVIRONMENT_ID \
+    -u CONFLUENT_KAFKA_API_KEY \
+    -u CONFLUENT_KAFKA_API_SECRET \
+    -u CONFLUENT_REST_ENDPOINT \
+    -u KAFKA_API_KEY \
+    -u KAFKA_API_SECRET \
     -u CONFLUENT_FLINK_API_KEY \
     -u CONFLUENT_FLINK_API_SECRET \
     -u CONFLUENT_FLINK_REST_ENDPOINT \
@@ -177,6 +182,127 @@ else
     echo "If your Terraform configuration requires an organization_id variable, set CONFLUENT_ORGANIZATION_ID in your .env or environment."
     exit 1
 fi
+
+# Bootstrap: create automated Kafka API key/secret and persist to .env
+echo -e "${YELLOW}🔑 Bootstrapping automated API keys (service account + Kafka API key)...${NC}"
+
+pushd "$PROJECT_ROOT/terraform/shared" >/dev/null
+
+# Initialize once (idempotent)
+terraform init >/dev/null 2>&1 || true
+
+# Apply shared module to create service account and API keys
+if env ${unset_env_flags[@]} terraform apply -auto-approve \
+    -var="confluent_cloud_api_key=$CONFLUENT_CLOUD_API_KEY" \
+    -var="confluent_cloud_api_secret=$CONFLUENT_CLOUD_API_SECRET" \
+    -var="organization_id=$CONFLUENT_ORGANIZATION_ID" \
+    -var="environment_id=$CONFLUENT_ENVIRONMENT_ID" \
+    -var="cluster_id=$CONFLUENT_CLUSTER_ID" >/dev/null 2>&1; then
+    echo -e "${GREEN}✅ Automated API key resources applied${NC}"
+else
+    echo -e "${YELLOW}⚠️  Apply failed or was interrupted; attempting to read existing outputs...${NC}"
+fi
+
+# Read outputs in JSON
+OUTPUT_JSON=$(terraform output -json 2>/dev/null || true)
+
+# Extract values with jq or Python fallback
+extract_json_value() {
+    local json="$1" key="$2"
+    if command -v jq >/dev/null 2>&1; then
+        echo "$json" | jq -r ".[\"$key\"].value" 2>/dev/null
+    else
+        python3 - "$key" <<'PY'
+import json,sys
+key=sys.argv[1]
+data=json.load(sys.stdin)
+v=data.get(key,{}).get('value')
+print(v if v is not None else "")
+PY
+    fi
+}
+
+AUTO_SA_ID=$(extract_json_value "$OUTPUT_JSON" automated_service_account_id)
+AUTO_KAFKA_KEY=$(extract_json_value "$OUTPUT_JSON" automated_cluster_api_key_id)
+AUTO_KAFKA_SECRET=$(extract_json_value "$OUTPUT_JSON" automated_cluster_api_key_secret)
+AUTO_CLOUD_KEY=$(extract_json_value "$OUTPUT_JSON" automated_cloud_api_key_id)
+AUTO_CLOUD_SECRET=$(extract_json_value "$OUTPUT_JSON" automated_cloud_api_key_secret)
+AUTO_TEST_PREFIX=$(extract_json_value "$OUTPUT_JSON" test_prefix)
+AUTO_TEST_SUFFIX=$(extract_json_value "$OUTPUT_JSON" test_suffix)
+
+if [[ -z "$AUTO_KAFKA_KEY" || -z "$AUTO_KAFKA_SECRET" ]]; then
+    echo -e "${RED}❌ Could not obtain Kafka API key/secret from terraform outputs${NC}"
+    echo "Check terraform/shared configuration and credentials."
+    popd >/dev/null
+    exit 1
+fi
+
+popd >/dev/null
+
+# Persist to .env if present; create if missing
+ENV_FILE="$PROJECT_ROOT/.env"
+touch "$ENV_FILE"
+
+update_or_append() {
+    local key="$1" value="$2"
+    if grep -q "^export ${key}=" "$ENV_FILE"; then
+        # Replace existing line (handle quotes safely)
+        sed -i "s|^export ${key}=.*$|export ${key}=\"${value}\"|" "$ENV_FILE"
+    else
+        printf "export %s=\"%s\"\n" "$key" "$value" >> "$ENV_FILE"
+    fi
+}
+
+if [[ -n "$AUTO_KAFKA_KEY" && -n "$AUTO_KAFKA_SECRET" ]]; then
+    update_or_append CONFLUENT_KAFKA_API_KEY "$AUTO_KAFKA_KEY"
+    update_or_append CONFLUENT_KAFKA_API_SECRET "$AUTO_KAFKA_SECRET"
+    echo -e "${GREEN}✅ Kafka API key/secret saved to .env${NC}"
+    export CONFLUENT_KAFKA_API_KEY="$AUTO_KAFKA_KEY"
+    export CONFLUENT_KAFKA_API_SECRET="$AUTO_KAFKA_SECRET"
+else
+    echo -e "${YELLOW}⚠️  Could not extract Kafka API key/secret from terraform outputs${NC}"
+fi
+
+# Persist OrganizationAdmin cloud API key/secret for RBAC operations
+if [[ -n "$AUTO_CLOUD_KEY" && -n "$AUTO_CLOUD_SECRET" ]]; then
+    update_or_append CONFLUENT_CLOUD_ADMIN_API_KEY "$AUTO_CLOUD_KEY"
+    update_or_append CONFLUENT_CLOUD_ADMIN_API_SECRET "$AUTO_CLOUD_SECRET"
+    echo -e "${GREEN}✅ OrgAdmin Cloud API key/secret saved to .env${NC}"
+    export CONFLUENT_CLOUD_ADMIN_API_KEY="$AUTO_CLOUD_KEY"
+    export CONFLUENT_CLOUD_ADMIN_API_SECRET="$AUTO_CLOUD_SECRET"
+else
+    echo -e "${YELLOW}⚠️  Could not extract OrgAdmin Cloud API key/secret from terraform outputs (RBAC will fall back to CONFLUENT_CLOUD_API_KEY)${NC}"
+fi
+
+if [[ -n "$AUTO_SA_ID" ]]; then
+    # Useful for modules needing a service account principal
+    update_or_append TEST_SERVICE_ACCOUNT_ID "$AUTO_SA_ID"
+    update_or_append CONFLUENT_CLOUD_SERVICE_ACCOUNT "$AUTO_SA_ID"
+    export TEST_SERVICE_ACCOUNT_ID="$AUTO_SA_ID"
+    export CONFLUENT_CLOUD_SERVICE_ACCOUNT="$AUTO_SA_ID"
+    echo -e "${GREEN}✅ Service Account ID saved to .env${NC}"
+    # Set TEST_SERVICE_ACCOUNT principal if not already present
+    if [[ -z "${TEST_SERVICE_ACCOUNT:-}" ]]; then
+        update_or_append TEST_SERVICE_ACCOUNT "User:${AUTO_SA_ID}"
+        export TEST_SERVICE_ACCOUNT="User:${AUTO_SA_ID}"
+        echo -e "${GREEN}✅ Default TEST_SERVICE_ACCOUNT set to service account principal${NC}"
+    fi
+fi
+
+# Persist test_prefix/test_suffix to .env so config placeholders can be resolved
+if [[ -n "$AUTO_TEST_PREFIX" ]]; then
+    update_or_append TEST_PREFIX "$AUTO_TEST_PREFIX"
+    export TEST_PREFIX="$AUTO_TEST_PREFIX"
+    echo -e "${GREEN}✅ TEST_PREFIX saved to .env${NC}"
+fi
+if [[ -n "$AUTO_TEST_SUFFIX" ]]; then
+    update_or_append TEST_SUFFIX "$AUTO_TEST_SUFFIX"
+    export TEST_SUFFIX="$AUTO_TEST_SUFFIX"
+    echo -e "${GREEN}✅ TEST_SUFFIX saved to .env${NC}"
+fi
+
+# Secure .env permissions
+chmod 600 "$ENV_FILE" 2>/dev/null || true
 
 # Create test directories
 echo -e "${YELLOW}📁 Creating test directories...${NC}"

@@ -333,6 +333,26 @@ get_module_variables() {
     echo "$temp_vars_file"
 }
 
+# Check if the current terraform module declares a variable
+module_has_variable() {
+    local var_name="$1"
+    # Search all .tf files in the current module directory for variable declaration
+    if ls *.tf >/dev/null 2>&1; then
+        # match: variable "name" or variable\n  "name" styles
+        if grep -qE "variable[[:space:]]+\"${var_name}\"" *.tf 2>/dev/null; then
+            return 0
+        fi
+        if grep -qE "variable[[:space:]]*\n[[:space:]]*\"${var_name}\"" *.tf 2>/dev/null; then
+            return 0
+        fi
+        # fallback: variable followed by name without quotes (less common)
+        if grep -qE "variable[[:space:]]+${var_name}" *.tf 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Function to run a single module test
 run_module_test() {
     local module_name="$1"
@@ -395,69 +415,227 @@ run_module_test() {
         -u CONFLUENT_FLINK_API_SECRET \
         -u CONFLUENT_FLINK_REST_ENDPOINT \
         -u CONFLUENT_FLINK_COMPUTE_POOL_ID \
-        -u CONFLUENT_FLINK_PRINCIPAL_ID)
+        -u CONFLUENT_FLINK_PRINCIPAL_ID \
+        -u KAFKA_API_KEY \
+        -u KAFKA_API_SECRET)
 
     "${TF_ENV[@]}" terraform init >> "$log_file" 2>&1
-    
+
+    # Preflight: scan module configuration for placeholder env vars and ensure required envs exist
+    MODULE_YAML_RANGE=$(get_module_block_range "$PROJECT_ROOT/$CONFIG_FILE" "$module_name" || true)
+    if [[ -n "$MODULE_YAML_RANGE" ]]; then
+        local start=${MODULE_YAML_RANGE%:*} end=${MODULE_YAML_RANGE#*:}
+        local module_block
+        module_block=$(sed -n "${start},${end}p" "$PROJECT_ROOT/$CONFIG_FILE")
+        # Find ${VARNAME} occurrences
+        local missing_envs=()
+        while read -r var; do
+            # strip ${ }
+            local name=$(printf "%s" "$var" | sed -E 's/\$\{([^}]+)\}/\1/')
+            # if env is not set, consider it missing
+            if [[ -z "${!name:-}" ]]; then
+                missing_envs+=("$name")
+            fi
+        done < <(printf "%s" "$module_block" | grep -oE '\$\{[A-Z0-9_]+\}' || true)
+
+        if [[ ${#missing_envs[@]} -gt 0 ]]; then
+            # decide whether to skip or provide fallbacks
+            local to_skip=false
+            for mv in "${missing_envs[@]}"; do
+                case "$mv" in
+                    AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY|TEST_S3_BUCKET|TEST_S3_BUCKET_NAME)
+                        echo -e "${YELLOW}⚠️  Skipping module '$module_name' because required external env '$mv' is not set.${NC}"
+                        to_skip=true
+                        ;;
+                    SCHEMA_REGISTRY_API_KEY|SCHEMA_REGISTRY_API_SECRET|SR_API_KEY|SR_API_SECRET)
+                        # fallback to cloud admin if available
+                        if [[ -n "${CONFLUENT_CLOUD_ADMIN_API_KEY:-}" ]]; then
+                            export SCHEMA_REGISTRY_API_KEY="${CONFLUENT_CLOUD_ADMIN_API_KEY}"
+                        fi
+                        if [[ -n "${CONFLUENT_CLOUD_ADMIN_API_SECRET:-}" ]]; then
+                            export SCHEMA_REGISTRY_API_SECRET="${CONFLUENT_CLOUD_ADMIN_API_SECRET}"
+                        fi
+                        ;;
+                    CONFLUENT_KAFKA_API_KEY|CONFLUENT_KAFKA_API_SECRET|KAFKA_API_KEY|KAFKA_API_SECRET)
+                        # no-op: these should be provisioned by setup; warn if missing
+                        echo -e "${YELLOW}⚠️  Module '$module_name' references Kafka credentials ('$mv') which are not set.${NC}"
+                        ;;
+                    *)
+                        # Unknown missing env - warn but do not auto-skip
+                        echo -e "${YELLOW}⚠️  Module '$module_name' references missing env '$mv' (will attempt to continue).${NC}"
+                        ;;
+                esac
+            done
+            if [[ "$to_skip" == "true" ]]; then
+                echo -e "${YELLOW}⏭️  Skipping module '$module_name' due to missing external credentials. Marking as skipped.${NC}"
+                popd >/dev/null
+                return 0
+            fi
+        fi
+    fi
+
     if [[ "$EXECUTION_MODE" == "apply" ]]; then
         echo -e "${YELLOW}🚀 Running terraform apply for $module_name...${NC}"
-        
+
     # Provider auth is sourced from environment variables (.env); no tfvars required
         # Build module-specific args
-        TF_ARGS=( -auto-approve -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" -var="cluster_id=${CONFLUENT_CLUSTER_ID}" )
-        DEST_ARGS=( -auto-approve -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" -var="cluster_id=${CONFLUENT_CLUSTER_ID}" )
+    TF_ARGS=( -input=false -auto-approve )
+    DEST_ARGS=( -input=false -auto-approve )
+
+    # Only pass variables that the module actually declares to avoid "undeclared variable" errors
+    if module_has_variable "environment_id"; then
+        TF_ARGS+=( -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" )
+        DEST_ARGS+=( -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" )
+    fi
+    if module_has_variable "cluster_id"; then
+        TF_ARGS+=( -var="cluster_id=${CONFLUENT_CLUSTER_ID}" )
+        DEST_ARGS+=( -var="cluster_id=${CONFLUENT_CLUSTER_ID}" )
+    fi
+    if module_has_variable "organization_id" && [[ -n "${CONFLUENT_ORGANIZATION_ID:-}" ]]; then
+        TF_ARGS+=( -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" )
+        DEST_ARGS+=( -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" )
+    fi
 
     case "$module_name" in
             rbac_cluster_admin|rbac_topic_access|rbac_enhanced_validation)
-                PRINCIPAL_VALUE="${TEST_SERVICE_ACCOUNT:-User:admin@example.com}"
-        ROLE_VALUE=$(get_module_field "$config_file" "$module_name" "role")
+                if [[ -n "${TEST_SERVICE_ACCOUNT_ID:-}" ]]; then
+                    PRINCIPAL_VALUE="User:${TEST_SERVICE_ACCOUNT_ID}"
+                else
+                    PRINCIPAL_VALUE="${TEST_SERVICE_ACCOUNT:-User:admin@example.com}"
+                fi
+                ROLE_VALUE=$(get_module_field "$config_file" "$module_name" "role")
                 [[ -z "$ROLE_VALUE" ]] && ROLE_VALUE="CloudClusterAdmin"
-                TF_ARGS+=( -var="principal=${PRINCIPAL_VALUE}" -var="role=${ROLE_VALUE}" -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" )
-                DEST_ARGS+=( -var="principal=${PRINCIPAL_VALUE}" -var="role=${ROLE_VALUE}" -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" )
-        # Provider auth for this module
-        TF_ARGS+=( -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" )
-        DEST_ARGS+=( -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" )
+                # add principal/role/org only if module declares them
+                if module_has_variable "principal"; then
+                    TF_ARGS+=( -var="principal=${PRINCIPAL_VALUE}" )
+                    DEST_ARGS+=( -var="principal=${PRINCIPAL_VALUE}" )
+                fi
+                if module_has_variable "role"; then
+                    TF_ARGS+=( -var="role=${ROLE_VALUE}" )
+                    DEST_ARGS+=( -var="role=${ROLE_VALUE}" )
+                fi
+                if module_has_variable "organization_id"; then
+                    TF_ARGS+=( -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" )
+                    DEST_ARGS+=( -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" )
+                fi
+                # If this module declares a topic_name, resolve and pass it only for topic-scoped roles
+                if module_has_variable "topic_name"; then
+                    RAW_TOPIC_NAME=$(get_module_field "$config_file" "$module_name" "topic_name")
+                    RAW_TOPIC_NAME=${RAW_TOPIC_NAME:-"${TEST_PREFIX}-topic-${TEST_SUFFIX:-manual}"}
+                    ROLE_UPPER=$(printf "%s" "$ROLE_VALUE" | tr '[:lower:]' '[:upper:]')
+                    # Skip passing topic_name for cluster-scoped roles like CloudClusterAdmin
+                    if [[ "$ROLE_UPPER" =~ CLUSTER ]]; then
+                        echo -e "${YELLOW}⚠️  Not passing topic_name for cluster-scoped role '$ROLE_VALUE'${NC}"
+                    else
+                        TOPIC_NAME=$(printf "%s" "$RAW_TOPIC_NAME" | envsubst)
+                        TOPIC_NAME=$(echo "$TOPIC_NAME" | sed -E 's/[^a-zA-Z0-9._-]/-/g')
+                        TF_ARGS+=( -var="topic_name=${TOPIC_NAME}" )
+                        DEST_ARGS+=( -var="topic_name=${TOPIC_NAME}" )
+                    fi
+                fi
+        # Provider auth for this module (prefer OrgAdmin creds if available) - only if variables declared
+        local ADMIN_KEY="${CONFLUENT_CLOUD_ADMIN_API_KEY:-$CONFLUENT_CLOUD_API_KEY}"
+        local ADMIN_SECRET="${CONFLUENT_CLOUD_ADMIN_API_SECRET:-$CONFLUENT_CLOUD_API_SECRET}"
+        if module_has_variable "confluent_cloud_api_key"; then
+            TF_ARGS+=( -var="confluent_cloud_api_key=${ADMIN_KEY}" )
+            DEST_ARGS+=( -var="confluent_cloud_api_key=${ADMIN_KEY}" )
+        fi
+        if module_has_variable "confluent_cloud_api_secret"; then
+            TF_ARGS+=( -var="confluent_cloud_api_secret=${ADMIN_SECRET}" )
+            DEST_ARGS+=( -var="confluent_cloud_api_secret=${ADMIN_SECRET}" )
+        fi
                 ;;
             kafka_topic)
                 TOPIC_NAME="${TEST_PREFIX}-topic-$(date +%s)"
         PARTITIONS=$(get_module_field "$config_file" "$module_name" "partitions")
                 [[ -z "$PARTITIONS" ]] && PARTITIONS=1
-                TF_ARGS+=( -var="topic_name=${TOPIC_NAME}" -var="partitions=${PARTITIONS}" )
-                # Provide Kafka credentials if available
-                if [[ -n "${CONFLUENT_KAFKA_API_KEY:-}" && -n "${CONFLUENT_KAFKA_API_SECRET:-}" ]]; then
+                if module_has_variable "topic_name"; then
+                    TF_ARGS+=( -var="topic_name=${TOPIC_NAME}" )
+                    DEST_ARGS+=( -var="topic_name=${TOPIC_NAME}" )
+                fi
+                if module_has_variable "partitions"; then
+                    TF_ARGS+=( -var="partitions=${PARTITIONS}" )
+                    DEST_ARGS+=( -var="partitions=${PARTITIONS}" )
+                fi
+                if module_has_variable "credentials" || module_has_variable "kafka_api_key"; then
                     TF_ARGS+=( -var "credentials={key=\"${CONFLUENT_KAFKA_API_KEY}\", secret=\"${CONFLUENT_KAFKA_API_SECRET}\"}" )
                     DEST_ARGS+=( -var "credentials={key=\"${CONFLUENT_KAFKA_API_KEY}\", secret=\"${CONFLUENT_KAFKA_API_SECRET}\"}" )
-                    # Also set provider-level Kafka credentials for compatibility
-                    TF_ARGS+=( -var="kafka_api_key=${CONFLUENT_KAFKA_API_KEY}" -var="kafka_api_secret=${CONFLUENT_KAFKA_API_SECRET}" )
-                    DEST_ARGS+=( -var="kafka_api_key=${CONFLUENT_KAFKA_API_KEY}" -var="kafka_api_secret=${CONFLUENT_KAFKA_API_SECRET}" )
-                else
-                    echo -e "${YELLOW}⚠️  CONFLUENT_KAFKA_API_KEY/SECRET not set; topic creation may fail${NC}"
                 fi
-        # Provider auth for this module
-        TF_ARGS+=( -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" )
-        DEST_ARGS+=( -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" )
+                # Provider auth for this module (add only if declared)
+                if module_has_variable "confluent_cloud_api_key"; then
+                    TF_ARGS+=( -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" )
+                    DEST_ARGS+=( -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" )
+                fi
+                if module_has_variable "confluent_cloud_api_secret"; then
+                    TF_ARGS+=( -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" )
+                    DEST_ARGS+=( -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" )
+                fi
+                ;;
+            schema_registry)
+                # Provide service account id and schema registry API creds if declared
+                if module_has_variable "service_account_id"; then
+                    TF_ARGS+=( -var="service_account_id=${TEST_SERVICE_ACCOUNT_ID:-${CONFLUENT_CLOUD_SERVICE_ACCOUNT:-}}" )
+                    DEST_ARGS+=( -var="service_account_id=${TEST_SERVICE_ACCOUNT_ID:-${CONFLUENT_CLOUD_SERVICE_ACCOUNT:-}}" )
+                fi
+                if module_has_variable "sr_api_key"; then
+                    SR_KEY=${SCHEMA_REGISTRY_API_KEY:-${CONFLUENT_CLOUD_ADMIN_API_KEY:-${CONFLUENT_CLOUD_API_KEY:-}}}
+                    TF_ARGS+=( -var="sr_api_key=${SR_KEY}" )
+                    DEST_ARGS+=( -var="sr_api_key=${SR_KEY}" )
+                fi
+                if module_has_variable "sr_api_secret"; then
+                    SR_SECRET=${SCHEMA_REGISTRY_API_SECRET:-${CONFLUENT_CLOUD_ADMIN_API_SECRET:-${CONFLUENT_CLOUD_API_SECRET:-}}}
+                    TF_ARGS+=( -var="sr_api_secret=${SR_SECRET}" )
+                    DEST_ARGS+=( -var="sr_api_secret=${SR_SECRET}" )
+                fi
+                ;;
+            smt_connector)
+                # If kafka_rest_endpoint is required and not set, skip this module
+                if module_has_variable "kafka_rest_endpoint" && [[ -z "${CONFLUENT_KAFKA_REST_ENDPOINT:-}" ]]; then
+                    echo -e "${YELLOW}⚠️  Skipping module 'smt_connector' because CONFLUENT_KAFKA_REST_ENDPOINT is not set.${NC}"
+                    popd >/dev/null
+                    return 0
+                fi
+                # Provide kafka API creds if declared
+                if module_has_variable "kafka_api_key"; then
+                    TF_ARGS+=( -var="kafka_api_key=${CONFLUENT_KAFKA_API_KEY}" )
+                    DEST_ARGS+=( -var="kafka_api_key=${CONFLUENT_KAFKA_API_KEY}" )
+                fi
+                if module_has_variable "kafka_api_secret"; then
+                    TF_ARGS+=( -var="kafka_api_secret=${CONFLUENT_KAFKA_API_SECRET}" )
+                    DEST_ARGS+=( -var="kafka_api_secret=${CONFLUENT_KAFKA_API_SECRET}" )
+                fi
+                if module_has_variable "kafka_rest_endpoint" && [[ -n "${CONFLUENT_KAFKA_REST_ENDPOINT:-}" ]]; then
+                    TF_ARGS+=( -var="kafka_rest_endpoint=${CONFLUENT_KAFKA_REST_ENDPOINT}" )
+                    DEST_ARGS+=( -var="kafka_rest_endpoint=${CONFLUENT_KAFKA_REST_ENDPOINT}" )
+                fi
                 ;;
             *) ;;
         esac
 
-        # Run terraform apply with the required variables
-    if "${TF_ENV[@]}" terraform apply "${TF_ARGS[@]}" >> "$log_file" 2>&1; then
-            echo -e "${GREEN}✅ Module '$module_name' applied successfully${NC}"
-            
-            # Run validation if cleanup is enabled
+        # Cleanup helper (always attempt if enabled)
+        cleanup_module() {
             if [[ "$CLEANUP" == "true" ]]; then
                 echo -e "${YELLOW}🧹 Cleaning up resources for $module_name...${NC}"
-                
-                # Use the same variables for destroy (best-effort)
                 "${TF_ENV[@]}" terraform destroy "${DEST_ARGS[@]}" >> "$log_file" 2>&1 || true
                 echo -e "${GREEN}✅ Resources cleaned up successfully${NC}"
             fi
-            
+        }
+
+        # Ensure we cleanup on interrupt too
+        trap 'cleanup_module; popd >/dev/null; exit 130' INT TERM
+
+        # Run terraform apply with the required variables
+    if "${TF_ENV[@]}" terraform apply "${TF_ARGS[@]}" >> "$log_file" 2>&1; then
+            echo -e "${GREEN}✅ Module '$module_name' applied successfully${NC}"
+            cleanup_module
+            trap - INT TERM
             popd >/dev/null
             return 0
         else
             echo -e "${RED}❌ Failed to apply module '$module_name'${NC}"
             echo -e "${RED}   Check the log file for details: $log_file${NC}"
+            cleanup_module
+            trap - INT TERM
             popd >/dev/null
             return 1
         fi
@@ -465,17 +643,14 @@ run_module_test() {
         echo -e "${YELLOW}📝 Running terraform plan for $module_name...${NC}"
         
         # Build minimal vars for plan to avoid prompts
-        PLAN_ARGS=( -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" -var="cluster_id=${CONFLUENT_CLUSTER_ID}" )
+    PLAN_ARGS=( -input=false -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" -var="cluster_id=${CONFLUENT_CLUSTER_ID}" )
         if [[ "$module_name" == "kafka_topic" ]]; then
             TOPIC_NAME="${TEST_PREFIX}-topic-plan-$(date +%s)"
             PARTITIONS=$(get_module_field "$config_file" "$module_name" "partitions")
             [[ -z "$PARTITIONS" ]] && PARTITIONS=1
             PLAN_ARGS+=( -var="topic_name=${TOPIC_NAME}" -var="partitions=${PARTITIONS}" )
             PLAN_ARGS+=( -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" )
-            if [[ -n "${CONFLUENT_KAFKA_API_KEY:-}" && -n "${CONFLUENT_KAFKA_API_SECRET:-}" ]]; then
-                PLAN_ARGS+=( -var "credentials={key=\"${CONFLUENT_KAFKA_API_KEY}\", secret=\"${CONFLUENT_KAFKA_API_SECRET}\"}" )
-                PLAN_ARGS+=( -var="kafka_api_key=${CONFLUENT_KAFKA_API_KEY}" -var="kafka_api_secret=${CONFLUENT_KAFKA_API_SECRET}" )
-            fi
+            PLAN_ARGS+=( -var "credentials={key=\"${CONFLUENT_KAFKA_API_KEY}\", secret=\"${CONFLUENT_KAFKA_API_SECRET}\"}" )
         fi
         if [[ "$module_name" == "rbac_cluster_admin" || "$module_name" == "rbac_topic_access" || "$module_name" == "rbac_enhanced_validation" ]]; then
             PRINCIPAL_VALUE="${TEST_SERVICE_ACCOUNT:-User:admin@example.com}"

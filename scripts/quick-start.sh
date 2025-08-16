@@ -68,6 +68,7 @@ if [[ "$USE_EXISTING" == "false" ]]; then
     echo ""
 
     # Collect Confluent Cloud information
+  prompt_with_default "Confluent Cloud Organization ID (UUID, e.g., 52445b30-3393-47c5-b174-9a856fc7ca26)" "" "ORG_ID"
     prompt_with_default "Confluent Cloud Environment ID (e.g., env-123456)" "" "ENV_ID"
     prompt_with_default "Confluent Cloud Cluster ID (e.g., lkc-abcdef)" "" "CLUSTER_ID"
     prompt_with_default "Cloud Provider (aws/gcp/azure)" "aws" "CLOUD_PROVIDER"
@@ -94,6 +95,7 @@ environment:
   description: "Local development and testing environment"
   
 confluent_cloud:
+  organization_id: "$ORG_ID"
   environment_id: "$ENV_ID"
   cluster_id: "$CLUSTER_ID"
   region: "$REGION"
@@ -149,6 +151,7 @@ EOF
 # Source this file before running tests: source .env
 export CONFLUENT_CLOUD_API_KEY="$API_KEY"
 export CONFLUENT_CLOUD_API_SECRET="$API_SECRET"
+export CONFLUENT_ORGANIZATION_ID="$ORG_ID"
 export CONFLUENT_ENVIRONMENT_ID="$ENV_ID"
 export CONFLUENT_CLUSTER_ID="$CLUSTER_ID"
 
@@ -174,6 +177,17 @@ fi
 if [[ -f "$PROJECT_ROOT/.env" ]]; then
     echo -e "${YELLOW}🔧 Loading environment variables...${NC}"
     source "$PROJECT_ROOT/.env"
+
+  # Backfill missing Organization ID if using existing .env
+  if [[ -z "$CONFLUENT_ORGANIZATION_ID" ]]; then
+    echo -e "${YELLOW}ℹ️  CONFLUENT_ORGANIZATION_ID is not set in your .env.${NC}"
+    prompt_with_default "Confluent Cloud Organization ID (UUID, e.g., 52445b30-3393-47c5-b174-9a856fc7ca26)" "" "ORG_ID"
+    if [[ -n "$ORG_ID" ]]; then
+      echo "export CONFLUENT_ORGANIZATION_ID=\"$ORG_ID\"" >> "$PROJECT_ROOT/.env"
+      export CONFLUENT_ORGANIZATION_ID="$ORG_ID"
+      echo -e "${GREEN}✅ Added CONFLUENT_ORGANIZATION_ID to .env${NC}"
+    fi
+  fi
 fi
 
 # Run setup
@@ -213,6 +227,7 @@ echo -e "${YELLOW}⚠️  Important Notes:${NC}"
 echo "   - Always source .env before running tests: source .env"
 echo "   - Your credentials are stored in .env (git ignored)"
 echo "   - Local environment uses minimal resources for testing"
+echo "   - To find your Organization ID via CLI: confluent organization list"
 echo ""
 
 cd "$PROJECT_ROOT"
