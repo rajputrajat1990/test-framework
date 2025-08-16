@@ -1,24 +1,14 @@
 output "schema_registry_id" {
   description = "Schema Registry Cluster ID"
-  value       = confluent_schema_registry_cluster.test_sr.id
+  value       = data.confluent_schema_registry_cluster.test_sr.id
 }
 
 output "schema_registry_rest_endpoint" {
   description = "Schema Registry REST Endpoint"
-  value       = confluent_schema_registry_cluster.test_sr.rest_endpoint
+  value       = data.confluent_schema_registry_cluster.test_sr.rest_endpoint
 }
 
-output "schema_registry_api_key" {
-  description = "Schema Registry API Key"
-  value       = confluent_api_key.schema_registry_api_key.id
-  sensitive   = true
-}
-
-output "schema_registry_api_secret" {
-  description = "Schema Registry API Secret"
-  value       = confluent_api_key.schema_registry_api_key.secret
-  sensitive   = true
-}
+// API keys are provided via variables in this module; no outputs for keys.
 
 output "avro_schema_id" {
   description = "Avro Schema ID"

@@ -5,7 +5,7 @@ output "connector_id" {
 
 output "connector_name" {
   description = "SMT Test Connector Name"
-  value       = confluent_connector.smt_test_connector.display_name
+  value       = var.connector_name
 }
 
 output "connector_status" {

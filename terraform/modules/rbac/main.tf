@@ -23,6 +23,12 @@ variable "environment_id" {
   type        = string
 }
 
+variable "organization_id" {
+  description = "Confluent Cloud Organization ID"
+  type        = string
+  default     = ""
+}
+
 variable "cluster_id" {
   description = "Confluent Cloud Kafka Cluster ID"
   type        = string
@@ -64,7 +70,8 @@ data "confluent_kafka_cluster" "cluster" {
 locals {
   # Base CRN patterns
   environment_crn = data.confluent_environment.env.resource_name
-  cluster_crn     = var.cluster_id != "" ? data.confluent_kafka_cluster.cluster[0].resource_name : ""
+  # Construct cluster CRN explicitly since the data source doesn't expose resource_name
+  cluster_crn     = var.cluster_id != "" ? "crn://confluent.cloud/organization=${var.organization_id}/environment=${var.environment_id}/cloud-cluster=${var.cluster_id}" : ""
   
   # Determine the appropriate CRN pattern based on inputs
   resource_crn = var.crn_pattern != "" ? var.crn_pattern : (

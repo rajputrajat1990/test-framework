@@ -61,8 +61,6 @@ resource "confluent_connector" "smt_test_connector" {
     id = var.cluster_id
   }
   
-  display_name = var.connector_name
-  
   config_sensitive = {
     "kafka.api.key"    = var.kafka_api_key
     "kafka.api.secret" = var.kafka_api_secret
@@ -70,6 +68,7 @@ resource "confluent_connector" "smt_test_connector" {
   
   config_nonsensitive = merge(
     {
+  "name"                     = var.connector_name
       "connector.class"          = "io.confluent.connect.datagen.DatagenConnector"
       "kafka.topic"              = confluent_kafka_topic.smt_target.topic_name
       "output.data.format"       = var.output_data_format
@@ -99,14 +98,13 @@ resource "confluent_connector" "smt_verification_sink" {
     id = var.cluster_id
   }
   
-  display_name = "${var.connector_name}-sink"
-  
   config_sensitive = {
     "kafka.api.key"    = var.kafka_api_key
     "kafka.api.secret" = var.kafka_api_secret
   }
   
   config_nonsensitive = {
+  "name"               = "${var.connector_name}-sink"
     "connector.class"    = "org.apache.kafka.connect.file.FileStreamSinkConnector"
     "topics"             = confluent_kafka_topic.smt_target.topic_name
     "file"               = "/tmp/smt-output-${var.connector_name}.txt"

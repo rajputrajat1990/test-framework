@@ -29,7 +29,6 @@ resource "sumologic_http_source" "kafka_logs" {
   collector_id = var.sumo_collector_id
   
   content_type     = "application/json"
-  multiline        = false
   use_autoline_matching = false
   force_timezone   = false
   cutoff_timestamp = 0
@@ -44,7 +43,6 @@ resource "sumologic_http_source" "kafka_logs" {
 
 # Sumo Logic sink connector for real-time log streaming
 resource "confluent_connector" "sumo_logic_sink" {
-  display_name = "${var.environment}-sumo-logic-sink"
   
   environment {
     id = var.environment_id
@@ -59,6 +57,7 @@ resource "confluent_connector" "sumo_logic_sink" {
   }
   
   config_nonsensitive = {
+    "name"                     = "${var.environment}-sumo-logic-sink"
     "connector.class"           = "com.sumologic.kafka.connector.SumoLogicSinkConnector"
     "tasks.max"                = var.monitoring_config.connector_tasks
     "topics"                   = join(",", var.log_topics)
@@ -95,9 +94,12 @@ resource "confluent_connector" "sumo_logic_sink" {
 
 # Topics for monitoring data
 resource "confluent_kafka_topic" "monitoring_logs" {
-  kafka_cluster_id = var.cluster_id
   topic_name       = "${var.environment}-monitoring-logs"
   partitions_count = var.monitoring_config.log_partitions
+  
+  kafka_cluster {
+    id = var.cluster_id
+  }
   
   config = {
     "cleanup.policy"      = "delete"
@@ -108,9 +110,12 @@ resource "confluent_kafka_topic" "monitoring_logs" {
 }
 
 resource "confluent_kafka_topic" "connector_metrics" {
-  kafka_cluster_id = var.cluster_id
   topic_name       = "${var.environment}-connector-metrics"
   partitions_count = 1
+  
+  kafka_cluster {
+    id = var.cluster_id
+  }
   
   config = {
     "cleanup.policy"      = "delete"
@@ -120,26 +125,17 @@ resource "confluent_kafka_topic" "connector_metrics" {
 }
 
 resource "confluent_kafka_topic" "sumo_dlq" {
-  kafka_cluster_id = var.cluster_id
   topic_name       = "${var.environment}-sumo-dlq"
   partitions_count = 1
+  
+  kafka_cluster {
+    id = var.cluster_id
+  }
   
   config = {
     "cleanup.policy"      = "delete"
     "retention.ms"        = "604800000"  # 7 days
     "min.insync.replicas" = "2"
-  }
-}
-
-# Confluent Cloud Metrics API integration
-data "confluent_kafka_cluster_metrics" "cluster_metrics" {
-  cluster_id = var.cluster_id
-  
-  lifecycle {
-    postcondition {
-      condition     = length(self.metrics) > 0
-      error_message = "No metrics data available for cluster"
-    }
   }
 }
 

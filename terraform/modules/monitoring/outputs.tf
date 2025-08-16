@@ -49,15 +49,10 @@ output "monitoring_credentials" {
 output "cluster_metrics_info" {
   description = "Available cluster metrics information"
   value = {
-    cluster_id      = var.cluster_id
-    metrics_count   = length(data.confluent_kafka_cluster_metrics.cluster_metrics.metrics)
-    available_metrics = [
-      for metric in data.confluent_kafka_cluster_metrics.cluster_metrics.metrics : {
-        name        = metric.name
-        description = metric.description
-        type        = metric.type
-      }
-    ]
+    cluster_id           = var.cluster_id
+    monitoring_enabled   = true
+    metrics_collection   = var.monitoring_config.enable_jmx_metrics
+    metrics_interval_ms  = var.monitoring_config.metrics_interval_ms
   }
 }
 

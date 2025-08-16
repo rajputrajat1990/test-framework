@@ -55,6 +55,7 @@ REQUIRED_VARS=(
     "CONFLUENT_CLOUD_API_SECRET" 
     "CONFLUENT_ENVIRONMENT_ID"
     "CONFLUENT_CLUSTER_ID"
+    "CONFLUENT_ORGANIZATION_ID"
 )
 
 OPTIONAL_VARS=(
@@ -87,6 +88,7 @@ if [[ ${#missing_vars[@]} -gt 0 ]]; then
     echo "export CONFLUENT_CLOUD_API_SECRET=\"your-api-secret\""
     echo "export CONFLUENT_ENVIRONMENT_ID=\"env-xxxxx\""
     echo "export CONFLUENT_CLUSTER_ID=\"lkc-xxxxx\""
+    echo "export CONFLUENT_ORGANIZATION_ID=\"xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx\""
     echo ""
     exit 1
 fi
@@ -148,16 +150,31 @@ done
 echo -e "${YELLOW}🌐 Testing Confluent Cloud connectivity...${NC}"
 
 cd "$PROJECT_ROOT/terraform/shared"
-if terraform plan \
+# Build terraform plan command non-interactively
+plan_cmd=(terraform plan -input=false \
     -var="confluent_cloud_api_key=$CONFLUENT_CLOUD_API_KEY" \
     -var="confluent_cloud_api_secret=$CONFLUENT_CLOUD_API_SECRET" \
+    -var="organization_id=$CONFLUENT_ORGANIZATION_ID" \
     -var="environment_id=$CONFLUENT_ENVIRONMENT_ID" \
-    -var="cluster_id=$CONFLUENT_CLUSTER_ID" \
-    > /dev/null 2>&1; then
+    -var="cluster_id=$CONFLUENT_CLUSTER_ID")
+
+# Work around provider validation that auto-reads env vars for Flink by unsetting them for this subprocess
+unset_env_flags=(
+    -u CONFLUENT_ORGANIZATION_ID \
+    -u CONFLUENT_ENVIRONMENT_ID \
+    -u CONFLUENT_FLINK_API_KEY \
+    -u CONFLUENT_FLINK_API_SECRET \
+    -u CONFLUENT_FLINK_REST_ENDPOINT \
+    -u CONFLUENT_FLINK_COMPUTE_POOL_ID \
+    -u CONFLUENT_FLINK_PRINCIPAL_ID
+)
+
+if env ${unset_env_flags[@]} "${plan_cmd[@]}" > /dev/null 2>&1; then
     echo -e "${GREEN}✅ Confluent Cloud connectivity test passed${NC}"
 else
     echo -e "${RED}❌ Confluent Cloud connectivity test failed${NC}"
     echo "Please verify your API credentials and environment/cluster IDs"
+    echo "If your Terraform configuration requires an organization_id variable, set CONFLUENT_ORGANIZATION_ID in your .env or environment."
     exit 1
 fi
 

@@ -70,6 +70,7 @@ variable "alert_config" {
     teams_webhook_url    = optional(string, "")
     pagerduty_key       = optional(string, "")
     email_recipients    = optional(list(string), [])
+    alert_channels      = optional(list(string), [])  # Added missing alert_channels
     
     # Alert thresholds
     connector_failure_threshold     = optional(number, 1)
