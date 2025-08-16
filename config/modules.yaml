@@ -196,21 +196,6 @@ modules:
       - production
       - health-checks
       - sprint5
-        - api_version
-        - rest_endpoint
-      property_checks:
-        - property: "max_cfu"
-          expected: 10
-        - property: "cloud"
-          expected: "AWS"
-        - property: "region"
-          expected: "us-west-2"
-    dependencies: []
-    tags:
-      - sprint4
-      - flink
-      - compute
-      - streaming
 
   # Sprint 4: Flink Job Module
   flink_job:

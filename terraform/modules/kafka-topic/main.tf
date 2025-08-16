@@ -7,6 +7,30 @@ terraform {
   }
 }
 
+# Provider auth variables for standalone module execution
+variable "confluent_cloud_api_key" {
+  description = "Confluent Cloud API Key"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "confluent_cloud_api_secret" {
+  description = "Confluent Cloud API Secret"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+# Configure the provider explicitly so this module can run in isolation
+provider "confluent" {
+  cloud_api_key    = var.confluent_cloud_api_key
+  cloud_api_secret = var.confluent_cloud_api_secret
+  # Optional provider-level Kafka credentials for topic operations
+  kafka_api_key    = var.kafka_api_key
+  kafka_api_secret = var.kafka_api_secret
+}
+
 # Input variables
 variable "topic_name" {
   description = "Name of the Kafka topic"
@@ -57,6 +81,21 @@ variable "credentials" {
     key    = ""
     secret = ""
   }
+}
+
+# Optional Kafka API credentials for provider-level auth
+variable "kafka_api_key" {
+  description = "Kafka API Key for the Kafka cluster (provider-level)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "kafka_api_secret" {
+  description = "Kafka API Secret for the Kafka cluster (provider-level)"
+  type        = string
+  sensitive   = true
+  default     = ""
 }
 
 # Data source to get cluster information

@@ -129,3 +129,21 @@ output "validation_data" {
     }
   }
 }
+
+variable "confluent_cloud_api_key" {
+  description = "Confluent Cloud API Key"
+  type        = string
+  sensitive   = true
+}
+
+variable "confluent_cloud_api_secret" {
+  description = "Confluent Cloud API Secret"
+  type        = string
+  sensitive   = true
+}
+
+# Configure the provider
+provider "confluent" {
+  cloud_api_key    = var.confluent_cloud_api_key
+  cloud_api_secret = var.confluent_cloud_api_secret
+}

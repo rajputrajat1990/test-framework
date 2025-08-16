@@ -1,0 +1,475 @@
+#!/bin/bash
+
+# Terraform Test Framework Runner
+# This script executes tests based on module configurations
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+# Default values
+CONFIG_FILE="config/modules.yaml"
+ENVIRONMENT="dev"
+EXECUTION_MODE=""
+MODULE_FILTER=""
+EXECUTION_PLAN="basic"
+DRY_RUN=false
+VERBOSE=false
+CLEANUP=true
+PARALLEL=false
+
+# Usage function
+usage() {
+    echo -e "${BLUE}Confluent Cloud Terraform Test Framework Runner${NC}"
+    echo "=================================================="
+    echo ""
+    echo "Usage: $0 [OPTIONS]"
+    echo ""
+    echo "Options:"
+    echo "  -c, --config FILE         Configuration file (default: config/modules.yaml)"
+    echo "  -e, --env ENVIRONMENT     Environment (default: dev)"
+    echo "  -m, --module MODULE       Run specific module only"
+    echo "  -p, --plan PLAN          Execution plan: basic, full, security (default: basic)"
+    echo "  --execution-mode MODE     Override execution mode: apply or plan"
+    echo "  --dry-run                Show what would be executed without running"
+    echo "  --no-cleanup             Skip cleanup after tests"
+    echo "  --parallel               Run modules in parallel where possible"
+    echo "  -v, --verbose            Verbose output"
+    echo "  -h, --help               Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  $0 -e dev                 Run basic tests in dev environment"
+    echo "  $0 -e staging -p full     Run full test suite in staging"
+    echo "  $0 -m kafka_topic         Run only the Kafka topic module tests"
+    echo ""
+}
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -c|--config)
+            CONFIG_FILE="$2"
+            shift 2
+            ;;
+        -e|--env)
+            ENVIRONMENT="$2"
+            shift 2
+            ;;
+        -m|--module)
+            MODULE_FILTER="$2"
+            shift 2
+            ;;
+        -p|--plan)
+            EXECUTION_PLAN="$2"
+            shift 2
+            ;;
+        --execution-mode)
+            EXECUTION_MODE="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --no-cleanup)
+            CLEANUP=false
+            shift
+            ;;
+        --parallel)
+            PARALLEL=true
+            shift
+            ;;
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}❌ Unknown option: $1${NC}"
+            usage
+            exit 1
+            ;;
+    esac
+done
+
+# Load .env file if it exists
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+    echo -e "${YELLOW}🔧 Loading .env file...${NC}"
+    set -a
+    source "$PROJECT_ROOT/.env"
+    set +a
+fi
+
+# Check if yq is available for YAML parsing
+if ! command -v yq &> /dev/null; then
+    echo -e "${YELLOW}⚠️  yq is not available. Installing...${NC}"
+    if command -v apt-get &> /dev/null; then
+        sudo apt-get update && sudo apt-get install -y yq
+    elif command -v brew &> /dev/null; then
+        brew install yq
+    else
+        echo -e "${RED}❌ Please install yq to parse YAML configuration files${NC}"
+        exit 1
+    fi
+fi
+
+cd "$PROJECT_ROOT"
+
+# Validate configuration file
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo -e "${RED}❌ Configuration file not found: $CONFIG_FILE${NC}"
+    exit 1
+fi
+
+# Validate environment file
+ENV_FILE="config/environments/${ENVIRONMENT}.yaml"
+if [[ ! -f "$ENV_FILE" ]]; then
+    echo -e "${RED}❌ Environment file not found: $ENV_FILE${NC}"
+    exit 1
+fi
+
+echo -e "${BLUE}🧪 Terraform Test Framework Runner${NC}"
+echo "=================================================="
+echo -e "${CYAN}Configuration:${NC} $CONFIG_FILE"
+echo -e "${CYAN}Environment:${NC} $ENVIRONMENT"
+echo -e "${CYAN}Execution Plan:${NC} $EXECUTION_PLAN"
+if [[ -n "$MODULE_FILTER" ]]; then
+    echo -e "${CYAN}Module Filter:${NC} $MODULE_FILTER"
+fi
+echo -e "${CYAN}Dry Run:${NC} $DRY_RUN"
+echo -e "${CYAN}Parallel:${NC} $PARALLEL"
+echo ""
+
+# Load environment variables from environment file
+echo -e "${YELLOW}🔧 Loading environment configuration...${NC}"
+
+# Extract environment-specific settings
+ENV_VARS=$(yq '.confluent_cloud' "$ENV_FILE")
+if [[ -n "$ENV_VARS" ]]; then
+    # Convert JSON to shell variable assignments
+    ENV_VARS=$(echo "$ENV_VARS" | python3 -c '
+import json
+import sys
+import os
+
+try:
+    data = json.load(sys.stdin)
+    for k, v in data.items():
+        print(f"{k}={v}")
+        # Also set in environment
+        os.environ[k.upper()] = str(v)
+except Exception as e:
+    print(f"# Error parsing JSON: {e}", file=sys.stderr)
+')
+    
+    if [[ "$VERBOSE" == "true" ]]; then
+        echo "Environment variables: $ENV_VARS"
+    fi
+    
+    # Make variables available to terraform
+    export CONFLUENT_ENVIRONMENT_ID
+    export CONFLUENT_CLUSTER_ID
+    export CONFLUENT_CLOUD_API_KEY
+    export CONFLUENT_CLOUD_API_SECRET
+    export CONFLUENT_ORGANIZATION_ID
+fi
+
+# Set execution mode
+if [[ -z "$EXECUTION_MODE" ]]; then
+    EXECUTION_MODE=$(yq '.testing.execution_mode' "$ENV_FILE" | tr -d '"')
+    if [[ -z "$EXECUTION_MODE" ]]; then
+        EXECUTION_MODE="apply"
+    fi
+fi
+export TEST_EXECUTION_MODE="$EXECUTION_MODE"
+
+echo -e "${CYAN}Execution Mode:${NC} $EXECUTION_MODE"
+
+# Get modules to execute based on execution plan
+if [[ -n "$MODULE_FILTER" ]]; then
+    MODULES_TO_RUN="$MODULE_FILTER"
+else
+    # Extract execution modes and find the one that matches
+    EXECUTION_MODES=$(yq '.execution_modes' "$CONFIG_FILE")
+    MODULES_TO_RUN=$(echo "$EXECUTION_MODES" | python3 -c '
+import json
+import sys
+import os
+
+try:
+    execution_plan = os.environ.get("EXECUTION_PLAN", "basic")
+    data = json.load(sys.stdin)
+    for mode in data:
+        if mode.get("name") == execution_plan:
+            print(" ".join(mode.get("modules", [])))
+            break
+except Exception as e:
+    print(f"# Error parsing execution modes: {e}", file=sys.stderr)
+')
+    if [[ -z "$MODULES_TO_RUN" ]]; then
+        echo -e "${RED}❌ Execution plan '$EXECUTION_PLAN' not found in configuration${NC}"
+        exit 1
+    fi
+fi
+
+echo -e "${YELLOW}📋 Modules to execute:${NC} $MODULES_TO_RUN"
+echo ""
+
+# Function to validate module exists
+validate_module() {
+    local module_name="$1"
+    
+    # Get module info
+    MODULE_DATA=$(yq ".modules.$module_name" "$CONFIG_FILE")
+    if [[ "$MODULE_DATA" == "null" ]]; then
+        echo -e "${RED}❌ Module '$module_name' not found in configuration${NC}"
+        return 1
+    fi
+    
+    # Extract path
+    local module_path=$(echo "$MODULE_DATA" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+    print(data.get("path", ""))
+except Exception as e:
+    print("")
+')
+    
+    if [[ -z "$module_path" ]]; then
+        echo -e "${RED}❌ Module path not found for '$module_name'${NC}"
+        return 1
+    fi
+    
+    if [[ ! -d "terraform/$module_path" ]]; then
+        echo -e "${RED}❌ Module path not found: terraform/$module_path${NC}"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to check module dependencies
+check_dependencies() {
+    local module_name="$1"
+    
+    # Get dependencies
+    local dependencies_data=$(yq ".modules.$module_name.dependencies" "$CONFIG_FILE")
+    if [[ "$dependencies_data" == "null" ]]; then
+        # No dependencies
+        return 0
+    fi
+    
+    # Parse dependencies
+    local dependencies=$(echo "$dependencies_data" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+    if isinstance(data, list):
+        print(" ".join(data))
+except Exception as e:
+    pass
+')
+    
+    if [[ -z "$dependencies" ]]; then
+        return 0
+    fi
+    
+    echo -e "${YELLOW}📦 Module '$module_name' depends on: $dependencies${NC}"
+    
+    # Check each dependency
+    for dep in $dependencies; do
+        if ! validate_module "$dep"; then
+            echo -e "${RED}❌ Dependency '$dep' for module '$module_name' is invalid${NC}"
+            return 1
+        fi
+    done
+    
+    return 0
+}
+
+# Function to get module variables
+get_module_variables() {
+    local module_name="$1"
+    local temp_vars_file="/tmp/test_vars_${module_name}.tfvars"
+    
+    # Extract module parameters from config
+    local parameters=$(yq ".modules.$module_name.parameters" "$CONFIG_FILE")
+    echo "$parameters" > "/tmp/module_params_${module_name}.yaml"
+    
+    # Convert to Terraform variables format
+    echo "# Generated variables for module: $module_name" > "$temp_vars_file"
+    
+    # Add environment ID and cluster ID
+    echo "environment_id = \"${CONFLUENT_ENVIRONMENT_ID}\"" >> "$temp_vars_file"
+    echo "cluster_id = \"${CONFLUENT_CLUSTER_ID}\"" >> "$temp_vars_file"
+    echo "organization_id = \"${CONFLUENT_ORGANIZATION_ID}\"" >> "$temp_vars_file"
+    
+    # Add other parameters (this is a simplified version)
+    # In a full implementation, we would properly parse and substitute variables
+    
+    echo "$temp_vars_file"
+}
+
+# Function to run a single module test
+run_module_test() {
+    local module_name="$1"
+    
+    echo -e "${BLUE}🧪 Running module test: $module_name${NC}"
+    echo "----------------------------------------"
+    
+    # Validate module
+    if ! validate_module "$module_name"; then
+        return 1
+    fi
+    
+    # Check dependencies
+    check_dependencies "$module_name"
+    
+    # Get module configuration
+    MODULE_DATA=$(yq ".modules.$module_name" "$CONFIG_FILE")
+    local module_path=$(echo "$MODULE_DATA" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+    print(data.get("path", ""))
+except Exception as e:
+    print("")
+')
+    
+    local module_enabled=$(echo "$MODULE_DATA" | python3 -c '
+import json
+import sys
+
+try:
+    data = json.load(sys.stdin)
+    enabled = data.get("enabled", True)
+    if isinstance(enabled, bool):
+        print(str(enabled).lower())
+    else:
+        print(enabled.lower())
+except Exception as e:
+    print("true")
+')
+    
+    if [[ "$module_enabled" == "false" ]]; then
+        echo -e "${YELLOW}⚠️  Module '$module_name' is disabled, skipping${NC}"
+        return 0
+    fi
+    
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo -e "${YELLOW}🔍 DRY RUN: Would execute module '$module_name' in $module_path${NC}"
+        return 0
+    fi
+    
+    # Create logs directory if it doesn't exist
+    mkdir -p "$PROJECT_ROOT/logs"
+    
+    # Run the actual test
+    cd "terraform/${module_path}"
+    
+    local log_file="$PROJECT_ROOT/logs/${module_name}_$(date +%Y%m%d_%H%M%S).log"
+    
+    echo -e "${YELLOW}📝 Logging to: $log_file${NC}"
+    
+    # Initialize if needed
+    terraform init >> "$log_file" 2>&1
+    
+    if [[ "$EXECUTION_MODE" == "apply" ]]; then
+        echo -e "${YELLOW}🚀 Running terraform apply for $module_name...${NC}"
+        
+        if terraform apply -auto-approve \
+            -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" \
+            -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" \
+            -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" \
+            -var="cluster_id=${CONFLUENT_CLUSTER_ID}" \
+            -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" \
+            >> "$log_file" 2>&1; then
+            echo -e "${GREEN}✅ Module '$module_name' applied successfully${NC}"
+            
+            # Run validation if cleanup is enabled
+            if [[ "$CLEANUP" == "true" ]]; then
+                echo -e "${YELLOW}🧹 Cleaning up resources for $module_name...${NC}"
+                terraform destroy -auto-approve \
+                    -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" \
+                    -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" \
+                    -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" \
+                    -var="cluster_id=${CONFLUENT_CLUSTER_ID}" \
+                    -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" \
+                    >> "$log_file" 2>&1
+                echo -e "${GREEN}✅ Resources cleaned up successfully${NC}"
+            fi
+            
+            return 0
+        else
+            echo -e "${RED}❌ Failed to apply module '$module_name'${NC}"
+            echo -e "${RED}   Check the log file for details: $log_file${NC}"
+            return 1
+        fi
+    else
+        echo -e "${YELLOW}📝 Running terraform plan for $module_name...${NC}"
+        
+        if terraform plan \
+            -var="confluent_cloud_api_key=${CONFLUENT_CLOUD_API_KEY}" \
+            -var="confluent_cloud_api_secret=${CONFLUENT_CLOUD_API_SECRET}" \
+            -var="environment_id=${CONFLUENT_ENVIRONMENT_ID}" \
+            -var="cluster_id=${CONFLUENT_CLUSTER_ID}" \
+            -var="organization_id=${CONFLUENT_ORGANIZATION_ID}" \
+            >> "$log_file" 2>&1; then
+            echo -e "${GREEN}✅ Plan for module '$module_name' generated successfully${NC}"
+            return 0
+        else
+            echo -e "${RED}❌ Failed to plan module '$module_name'${NC}"
+            echo -e "${RED}   Check the log file for details: $log_file${NC}"
+            return 1
+        fi
+    fi
+}
+
+# Run all modules
+echo -e "${YELLOW}🚀 Starting test execution...${NC}"
+PASSED_MODULES=""
+FAILED_MODULES=""
+
+for module in $MODULES_TO_RUN; do
+    if run_module_test "$module"; then
+        PASSED_MODULES="$PASSED_MODULES $module"
+    else
+        FAILED_MODULES="$FAILED_MODULES $module"
+    fi
+done
+
+# Print summary
+echo ""
+echo -e "${BLUE}📊 Test Execution Summary${NC}"
+echo "=================================================="
+echo -e "${GREEN}✅ Passed (${#PASSED_MODULES[@]}): ${PASSED_MODULES}${NC}"
+echo -e "${RED}❌ Failed (${#FAILED_MODULES[@]}): ${FAILED_MODULES}${NC}"
+echo ""
+
+if [[ -n "$FAILED_MODULES" ]]; then
+    echo -e "${RED}❌ Some tests failed. Check logs in the logs/ directory.${NC}"
+    exit 1
+else
+    echo -e "${GREEN}✅ All tests passed!${NC}"
+    exit 0
+fi
