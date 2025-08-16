@@ -93,67 +93,72 @@ The framework now provides three levels of testing:
 git clone <repository-url>
 cd terraform-automation-framework
 
+
 # Confluent Cloud Terraform Test Framework
 
-A test automation framework for Confluent Cloud infrastructure using Terraform tests, focused on CI/CD integration and end-to-end data flow validation.
+## Overview
+This project provides a developer-friendly automation framework for testing Confluent Cloud infrastructure using Terraform. It enables automated validation of Kafka topics, RBAC, connectors, and end-to-end data flows, with built-in CI/CD support and reporting.
 
-## TL;DR
-- Run the guided quick start: `./scripts/quick-start.sh`
-- Run a single module test: `./scripts/test-runner.sh --env local --module kafka_topic`
-
-## What this repo provides
-- Reusable Terraform test modules for Confluent Cloud (topics, RBAC, connectors).
-- End-to-end data flow tests (producer → connector → consumer).
-- CI/CD-ready pipelines (GitLab) and reporting (JUnit XML, logs, metrics).
-
-## Quick checklist
-- [x] Clean quick-start and test-runner scripts
-- [x] CI/CD pipeline templates for GitLab
-- [x] Core test modules: `kafka_topic`, `rbac_*`, connectors
+## Features
+- Modular Terraform test suites for Confluent Cloud resources (Kafka topics, RBAC, connectors)
+- End-to-end data flow validation (producer → connector → consumer)
+- Performance and integration testing
+- Automated resource cleanup
+- CI/CD pipeline templates (GitLab)
+- JUnit XML reports, logs, and metrics
+- YAML-based configuration for modules and environments
 
 ## Prerequisites
 - Terraform >= 1.6.0
-- Confluent Cloud account with appropriate permissions
-- API key/secret with required access
+- Confluent Cloud account with required permissions
+- API key and secret
 
-## Quick Start
-1. Clone the repository
+## Getting Started
+Clone the repository and run the quick start script:
 
 ```bash
 git clone <repository-url>
 cd test-framework
-```
-
-2. Run the interactive quick start (recommended for first time)
-
-```bash
 ./scripts/quick-start.sh
 ```
 
-3. Load environment variables (if not using quick start)
+Alternatively, set up environment variables manually:
 
 ```bash
+export CONFLUENT_CLOUD_API_KEY=your-api-key
+export CONFLUENT_CLOUD_API_SECRET=your-api-secret
+export CONFLUENT_CLOUD_ENVIRONMENT_ID=env-xxxxx
+export CONFLUENT_CLOUD_CLUSTER_ID=lkc-xxxxx
 source .env
 ```
 
-4. Run a single module test
+## Usage
+Run a test for a specific module:
 
 ```bash
 ./scripts/test-runner.sh --env local --module kafka_topic
 ```
 
-For E2E runs, see `./scripts/run-e2e-tests.sh` (examples are in the `scripts/` folder).
+Run all end-to-end tests:
 
-## Available test modules (high level)
-- `kafka_topic` — topic creation and validation
-- `rbac_cluster_admin`, `rbac_topic_access` — RBAC role bindings and topic permissions
-- `s3_source_connector`, `postgres_sink_connector` — connector integration tests (may require external credentials)
-- `e2e_basic_flow`, `e2e_consumer_groups`, `e2e_performance` — end-to-end and performance tests
+```bash
+./scripts/run-e2e-tests.sh --test-type=basic-flow --env=dev
+./scripts/run-e2e-tests.sh --test-type=consumer-groups --env=dev
+./scripts/run-e2e-tests.sh --test-type=performance --env=staging
+```
 
-See `config/modules.yaml` for the full module configuration and `config/environments/` for environment-specific settings.
+See `scripts/` for more runners and options.
 
-## CI/CD (GitLab)
-Set required project variables in GitLab (example):
+## Available Modules
+- `kafka_topic`: Kafka topic creation and validation
+- `rbac_cluster_admin`, `rbac_topic_access`: RBAC role bindings and permissions
+- `s3_source_connector`, `postgres_sink_connector`: Connector integration tests (external credentials may be required)
+- `e2e_basic_flow`, `e2e_consumer_groups`, `e2e_performance`: End-to-end and performance tests
+
+See `config/modules.yaml` for all modules and `config/environments/` for environment configs.
+
+## CI/CD Integration
+This repository includes a GitLab pipeline template (`.gitlab-ci.yml`) for automated testing. Set the following variables in your GitLab project:
 
 ```
 CONFLUENT_CLOUD_API_KEY
@@ -164,21 +169,25 @@ TEST_NOTIFICATION_WEBHOOK
 TEST_S3_BUCKET
 ```
 
-The repository includes a GitLab pipeline template (`.gitlab-ci.yml`) that runs unit, integration, and E2E stages.
-
-## Project layout (short)
-
+## Project Structure
 ```
-./
+test-framework/
 ├── README.md
-├── scripts/                # runners and helpers (test-runner, quick-start, e2e runners)
-├── terraform/              # modules and terraform tests
-├── config/                 # module & environment definitions
-└── docs/                   # architecture and user guides
+├── scripts/
+├── terraform/
+├── config/
+├── docs/
+├── test-results/
+├── logs/
+└── ...
 ```
+
+## Documentation
+- [Architecture Guide](docs/architecture.md)
+- [User Guide](docs/user-guide.md)
 
 ## Contributing
-Contributions are welcome. Please open issues or PRs and follow the repo's contribution guidelines.
+Contributions are welcome! Please open issues or pull requests for improvements.
 
 ## License
 MIT
