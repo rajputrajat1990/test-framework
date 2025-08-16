@@ -1,120 +1,39 @@
 # Confluent Cloud Terraform Test Framework
 
-A comprehensive test automation framework for Confluent Cloud infrastructure using Terraform's native test capabilities with full CI/CD integration and end-to-end data flow testing.
+A comprehensive test automation framework for testing Confluent Cloud infrastructure using Terraform. Provides automated validation of Kafka topics, RBAC, connectors, and end-to-end data flows with CI/CD integration.
 
-## 🚀 Sprint 3 - IN PROGRESS!
+## Features
 
-**Status**: 🔄 **Enhanced Features Sprint Implementation**
-
-Sprint 3 is now under active development, implementing advanced data format validation, SMT transformation testing, and comprehensive RBAC/ACL security validation capabilities.
-
-### 🎯 Sprint 3 New Capabilities
-- **Multi-Format Data Validation**: JSON, Avro, Protobuf, CSV, XML with Schema Registry integration
-- **SMT Transformation Testing**: Complete Single Message Transform validation framework
-- **Enhanced Security Validation**: Comprehensive RBAC and ACL testing with compliance checks
-- **Schema Evolution Testing**: Backward/forward compatibility validation
-- **Performance Benchmarking**: High-throughput testing for all data formats and transformations
-- **Security Compliance**: Automated security policy validation and reporting
-
-### 🔧 Sprint 3 Technical Implementation
-- **Schema Registry Module**: Full multi-format schema management and validation
-- **SMT Connector Module**: Automated transformation testing with before/after validation
-- **Enhanced Security Scripts**: Comprehensive RBAC/ACL testing with compliance reporting
-- **Data Format Validation Framework**: Support for 5+ data formats with performance testing
-- **Integration Test Suites**: Complete Terraform test coverage for all new features
-
-## 🚀 Sprint 2 - COMPLETED!
-
-**Status**: ✅ **Production Ready with CI/CD & E2E Testing**
-
-This framework now provides complete end-to-end testing capabilities with GitLab CI/CD integration. Sprint 2 has successfully implemented:
-
-### ✅ New Sprint 2 Capabilities
+- **Native Terraform Testing**: Uses `terraform test` with real resource deployment for integration testing
 - **End-to-End Data Flow Testing**: Complete producer → connector → consumer validation
-- **GitLab CI/CD Integration**: 6-stage pipeline with parallel execution
+- **Multi-Format Data Support**: JSON, Avro, Protobuf, CSV, XML validation with Schema Registry integration
+- **RBAC & Security Testing**: Comprehensive role-based access control and security validation
+- **Connector Testing**: S3 source, PostgreSQL sink, and other connector integration tests
+- **Performance Testing**: High-throughput testing with detailed metrics and benchmarking
+- **CI/CD Integration**: GitLab pipeline templates with parallel execution
 - **Consumer Groups Testing**: Multi-group consumption scenarios with partition management
-- **Performance Benchmarking**: High-throughput testing with metrics collection
-- **Data Integrity Validation**: Cross-pipeline data validation for JSON and Avro formats
-- **Automated Notifications**: Multi-channel alerts (Slack, email, Teams)
-- **Security Integration**: SAST scanning and secret detection
-- **Resource Cleanup Automation**: Intelligent cleanup with failure recovery
+- **Modular Architecture**: Easily extensible for new Confluent Cloud components
+- **Configuration-Driven**: YAML-based module and environment configuration
+- **Automated Cleanup**: Intelligent resource cleanup with failure recovery
+- **Comprehensive Reporting**: JUnit XML reports, performance metrics, and detailed logs
 
-### ✅ Sprint 1 Foundation (Still Available)
-- **Kafka Topics**: Complete topic creation with configurable partitions and settings
-- **RBAC (Role-Based Access Control)**: Role bindings for various principals and resources  
-- **S3 Source Connector**: AWS S3 source connector with full configuration support
-- **Modular Architecture**: Dynamic module loading with environment overrides
-- **Resource Validation**: Comprehensive verification and API integration
+## Testing Coverage
 
-## 🎯 Complete Testing Coverage
-
-The framework now provides three levels of testing:
+The framework provides three levels of testing:
 
 1. **Unit Tests**: Configuration validation, syntax checking, and module verification
 2. **Integration Tests**: Module deployment and resource validation against live Confluent Cloud
 3. **End-to-End Tests**: Complete data flow validation with producer-connector-consumer scenarios
 
-## Features
-
-- **Sprint 3 Enhanced Features**: Multi-format data validation, SMT transformation testing, and comprehensive security validation
-- **Schema Registry Integration**: Complete schema management for Avro, Protobuf, and JSON with evolution testing
-- **SMT Testing Framework**: Automated Single Message Transform validation with before/after comparison
-- **Enhanced Security Validation**: Comprehensive RBAC/ACL testing with compliance reporting
-- **Multi-Format Data Support**: JSON, Avro, Protobuf, CSV, XML validation with performance testing
-- **Security Compliance Testing**: Automated policy validation and security scoring
-- **Native Terraform Testing**: Uses `terraform test` with apply operations for integration testing
-- **End-to-End Data Flow Testing**: Complete producer → connector → consumer validation
-- **GitLab CI/CD Integration**: 6-stage automated pipeline with parallel execution
-- **Consumer Groups Testing**: Multi-group consumption scenarios with partition management
-- **Performance Benchmarking**: High-throughput testing with detailed metrics
-- **Data Integrity Validation**: Cross-pipeline validation for JSON and Avro formats
-- **Modular Architecture**: Easily extensible for new Confluent Cloud components
-- **Security Integration**: SAST scanning, secret detection, and secure credential management
-- **Multi-Channel Notifications**: Slack, email, and Teams integration for test results
-- **Resource Validation**: Automated verification of created resources
-- **Configuration-Driven**: YAML-based module and environment configuration
-- **API Integration**: Cross-validates with Confluent Cloud Admin API
-- **Parallel Execution**: Supports concurrent module and test execution
-- **Automated Cleanup**: Intelligent resource cleanup with failure recovery
-- **Comprehensive Reporting**: JUnit XML reports, performance metrics, and detailed logs
-
 ## Prerequisites
 
-- Terraform >= 1.6.0
-- Confluent Cloud account with admin access
-- API key with necessary permissions
-
-## ⚡ Quick Start
-
-**New users**: Use the quick start script for guided setup!
-
-```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd terraform-automation-framework
-
-
-# Confluent Cloud Terraform Test Framework
-
-## Overview
-This project provides a developer-friendly automation framework for testing Confluent Cloud infrastructure using Terraform. It enables automated validation of Kafka topics, RBAC, connectors, and end-to-end data flows, with built-in CI/CD support and reporting.
-
-## Features
-- Modular Terraform test suites for Confluent Cloud resources (Kafka topics, RBAC, connectors)
-- End-to-end data flow validation (producer → connector → consumer)
-- Performance and integration testing
-- Automated resource cleanup
-- CI/CD pipeline templates (GitLab)
-- JUnit XML reports, logs, and metrics
-- YAML-based configuration for modules and environments
-
-## Prerequisites
 - Terraform >= 1.6.0
 - Confluent Cloud account with required permissions
-- API key and secret
+- API key and secret with necessary access
 
-## Getting Started
-Clone the repository and run the quick start script:
+## Quick Start
+
+Clone the repository and run the guided setup:
 
 ```bash
 git clone <repository-url>
@@ -122,42 +41,94 @@ cd test-framework
 ./scripts/quick-start.sh
 ```
 
-Alternatively, set up environment variables manually:
+**Manual setup** (alternative):
 
 ```bash
+# Set environment variables
 export CONFLUENT_CLOUD_API_KEY=your-api-key
 export CONFLUENT_CLOUD_API_SECRET=your-api-secret
 export CONFLUENT_CLOUD_ENVIRONMENT_ID=env-xxxxx
 export CONFLUENT_CLOUD_CLUSTER_ID=lkc-xxxxx
+
+# Initialize framework
+./scripts/setup.sh
+
+# Load environment
 source .env
 ```
 
 ## Usage
-Run a test for a specific module:
+
+### Basic Module Testing
+
+Test a specific module:
 
 ```bash
 ./scripts/test-runner.sh --env local --module kafka_topic
 ```
 
-Run all end-to-end tests:
+Run multiple modules with a test plan:
 
 ```bash
-./scripts/run-e2e-tests.sh --test-type=basic-flow --env=dev
-./scripts/run-e2e-tests.sh --test-type=consumer-groups --env=dev
-./scripts/run-e2e-tests.sh --test-type=performance --env=staging
+./scripts/test-runner.sh --env dev --plan basic
 ```
 
-See `scripts/` for more runners and options.
+### End-to-End Testing
+
+Run complete data flow tests:
+
+```bash
+# Basic data flow test
+./scripts/run-e2e-tests.sh --test-type=basic-flow --env=dev
+
+# Consumer groups test
+./scripts/run-e2e-tests.sh --test-type=consumer-groups --env=dev --message-count=500
+
+# Performance test
+./scripts/run-e2e-tests.sh --test-type=performance --env=staging --message-count=1000
+```
+
+### Advanced Options
+
+```bash
+# Dry run to see what would be executed
+./scripts/test-runner.sh --dry-run --plan basic --env local
+
+# Run with cleanup disabled (for debugging)
+./scripts/test-runner.sh --no-cleanup --env dev
+
+# Clean up test resources manually
+./scripts/cleanup-test-resources.sh --pipeline-id=12345
+```
 
 ## Available Modules
-- `kafka_topic`: Kafka topic creation and validation
-- `rbac_cluster_admin`, `rbac_topic_access`: RBAC role bindings and permissions
-- `s3_source_connector`, `postgres_sink_connector`: Connector integration tests (external credentials may be required)
-- `e2e_basic_flow`, `e2e_consumer_groups`, `e2e_performance`: End-to-end and performance tests
 
-See `config/modules.yaml` for all modules and `config/environments/` for environment configs.
+| Module | Description | Requirements |
+|--------|-------------|--------------|
+| `kafka_topic` | Kafka topic creation and validation | None |
+| `rbac_cluster_admin` | Cluster-level RBAC role bindings | None |
+| `rbac_topic_access` | Topic-specific RBAC permissions | None |
+| `s3_source_connector` | S3 source connector configuration | AWS credentials |
+| `postgres_sink_connector` | PostgreSQL sink connector | PostgreSQL database |
+| `e2e_basic_flow` | End-to-end data flow testing | None |
+| `e2e_consumer_groups` | Consumer groups testing scenarios | None |
+| `e2e_performance` | Performance and load testing | None |
+
+### Test Plans
+
+| Plan | Description | Modules Included |
+|------|-------------|------------------|
+| `basic` | Core Kafka and RBAC testing | kafka_topic, rbac_cluster_admin |
+| `basic_e2e` | Basic end-to-end data flow | e2e_basic_flow |
+| `consumer_groups_e2e` | Consumer group scenarios | e2e_consumer_groups |
+| `performance_e2e` | Performance testing | e2e_performance |
+| `full_e2e` | Complete E2E test suite | All E2E modules |
+| `connector_integration` | Connector testing | All connector modules |
+
+See `config/modules.yaml` for complete module definitions and `config/environments/` for environment configurations.
 
 ## CI/CD Integration
+
 This repository includes a GitLab pipeline template (`.gitlab-ci.yml`) for automated testing. Set the following variables in your GitLab project:
 
 ```
@@ -169,25 +140,45 @@ TEST_NOTIFICATION_WEBHOOK
 TEST_S3_BUCKET
 ```
 
+The pipeline automatically runs unit, integration, and end-to-end tests with parallel execution and comprehensive reporting.
+
 ## Project Structure
+
 ```
 test-framework/
 ├── README.md
-├── scripts/
-├── terraform/
-├── config/
-├── docs/
-├── test-results/
-├── logs/
-└── ...
+├── scripts/                    # Test runners and utilities
+│   ├── quick-start.sh         # Interactive setup
+│   ├── test-runner.sh         # Main test execution
+│   ├── run-e2e-tests.sh       # End-to-end test orchestration
+│   └── cleanup-test-resources.sh
+├── terraform/                  # Terraform modules and tests
+│   ├── modules/               # Individual test modules
+│   └── tests/                 # Test configurations
+├── config/                     # Configuration files
+│   ├── modules.yaml           # Module definitions
+│   └── environments/          # Environment configs
+├── docs/                      # Documentation
+├── test-results/              # Test outputs and reports
+└── logs/                      # Execution logs
 ```
 
+## Configuration
+
+- **Modules**: Configure test modules in `config/modules.yaml`
+- **Environments**: Environment-specific settings in `config/environments/`
+- **Test Plans**: Define custom test plans for different scenarios
+
 ## Documentation
+
 - [Architecture Guide](docs/architecture.md)
 - [User Guide](docs/user-guide.md)
+- [Comprehensive User Guide](docs/comprehensive-user-guide.md)
 
 ## Contributing
+
 Contributions are welcome! Please open issues or pull requests for improvements.
 
 ## License
+
 MIT
